@@ -75,8 +75,13 @@ nav button.on{color:var(--accent);font-weight:700}
       <div class="grid2"><button data-a="unit" data-u="ft" id="u-ft">Feet</button><button data-a="unit" data-u="m" id="u-m">Meters</button></div>
     </div>
     <div class="card">
+      <h2>Server</h2>
+      <button class="primary" data-a="push" style="width:100%">Save to server</button>
+      <p class="small muted" id="syncNote" style="margin:8px 0 0">Keeps a copy you can edit and turn into a caddy book. Needs a connection.</p>
+    </div>
+    <div class="card">
       <h2>Course file (JSON)</h2>
-      <button class="primary" data-a="edit" style="width:100%">Open in editor</button>
+      <button data-a="edit" style="width:100%">Open in editor</button>
       <button data-a="export" style="width:100%;margin-top:8px">Download JSON</button>
       <p class="small muted" id="exportNote" style="margin:8px 0 12px"></p>
       <label class="small muted" for="imp">Restore from a JSON file (replaces everything on this device)</label>
@@ -101,7 +106,7 @@ nav button.on{color:var(--accent);font-weight:700}
 (function(){
 "use strict";
 var R=6371008.8,FT=3.28084,KEY="caddy:v2",OLD_KEY="dgcaddy:v1";
-var holes=[],cur=1,units="ft",durSec=10,courseName="";
+var holes=[],cur=1,units="ft",durSec=10,courseName="",courseId="",serverRev=0;
 var last=null,cap=null,gpsErr=null,watchId=null,wake=null;
 
 function $(id){return document.getElementById(id)}
@@ -112,12 +117,12 @@ function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").repl
 function load(){
   try{
     var s=localStorage.getItem(KEY)||localStorage.getItem(OLD_KEY);
-    if(s){var o=JSON.parse(s);holes=o.holes||[];cur=o.cur||1;units=o.units||"ft";durSec=o.durSec||10;courseName=o.courseName||"";}
+    if(s){var o=JSON.parse(s);holes=o.holes||[];cur=o.cur||1;units=o.units||"ft";durSec=o.durSec||10;courseName=o.courseName||"";courseId=o.courseId||"";serverRev=o.serverRev||0;}
   }catch(e){}
   holes.forEach(function(h){if(!Array.isArray(h.waypoints))h.waypoints=[]});
 }
 function persist(){
-  try{localStorage.setItem(KEY,JSON.stringify({holes:holes,cur:cur,units:units,durSec:durSec,courseName:courseName}));}catch(e){}
+  try{localStorage.setItem(KEY,JSON.stringify({holes:holes,cur:cur,units:units,durSec:durSec,courseName:courseName,courseId:courseId,serverRev:serverRev}));}catch(e){}
 }
 function getHole(n,create){
   for(var i=0;i<holes.length;i++)if(holes[i].n===n)return holes[i];
@@ -338,16 +343,18 @@ function renderAll(){
 
 /* ---------- export / import ---------- */
 function slug(s){s=(s||"").trim().toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");return s||"disc-golf-course"}
-function exportJSON(){
-  if(!holes.length){toast("Nothing to export yet");return;}
-  var out=holes.map(function(h){
+function cleanData(){
+  return {holes:holes.map(function(h){
     var o={n:h.n,tee:h.tee,pin:h.pin};
     if(h.par!=null)o.par=h.par;
     if(h.ob)o.ob=h.ob;
     o.waypoints=h.waypoints;
     return o;
-  });
-  var data=JSON.stringify({holes:out,units:units,courseName:courseName},null,2),name=slug(courseName)+".json";
+  }),units:units,courseName:courseName};
+}
+function exportJSON(){
+  if(!holes.length){toast("Nothing to export yet");return;}
+  var data=JSON.stringify(cleanData(),null,2),name=slug(courseName)+".json";
   var url=URL.createObjectURL(new Blob([data],{type:"application/json"})),a=document.createElement("a");
   a.href=url;a.download=name;document.body.appendChild(a);a.click();
   setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url)},1000);
@@ -368,6 +375,56 @@ function importJSON(file){
     }catch(err){toast("That file isn't a valid course JSON");}
   };
   r.readAsText(file);
+}
+
+function uuid(){
+  if(window.crypto&&crypto.randomUUID)return crypto.randomUUID();
+  var b=new Uint8Array(16);
+  if(window.crypto&&crypto.getRandomValues)crypto.getRandomValues(b);else for(var i=0;i<16;i++)b[i]=Math.random()*256;
+  b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;
+  var h=Array.prototype.map.call(b,function(x){return ("0"+x.toString(16)).slice(-2)}).join("");
+  return h.slice(0,8)+"-"+h.slice(8,12)+"-"+h.slice(12,16)+"-"+h.slice(16,20)+"-"+h.slice(20);
+}
+function token(){
+  var t="";try{t=localStorage.getItem("caddy:token")||""}catch(e){}
+  if(!t){t=prompt("Enter the caddy password")||"";if(t){try{localStorage.setItem("caddy:token",t)}catch(e){}}}
+  return t;
+}
+/* always resolves to the parsed JSON plus _status (0 = no connection) */
+function api(a,body){
+  var t=token();
+  if(!t)return Promise.resolve({error:"A password is needed.",_status:-1});
+  return fetch("api.php?a="+a,{method:body?"POST":"GET",headers:{"X-Token":t,"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined})
+    .then(function(r){
+      return r.json().catch(function(){return {error:"Unexpected response from the server."}}).then(function(j){
+        if(r.status===401){try{localStorage.removeItem("caddy:token")}catch(e){}}
+        j._status=r.status;return j;
+      });
+    },function(){return {error:"No connection to the server.",_status:0}});
+}
+function syncNote(t){$("syncNote").textContent=t}
+function clock(){return new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}
+function push(force){
+  if(!holes.length){toast("Nothing to save yet");return;}
+  if(!courseId){courseId=uuid();persist();}
+  syncNote("Saving…");
+  api("save",{id:courseId,data:cleanData(),base_rev:serverRev,force:!!force}).then(function(j){
+    if(j._status===200){serverRev=j.rev;persist();syncNote("Saved to the server at "+clock()+".");toast("Saved to server");}
+    else if(j._status===409){
+      if(confirm("The server has newer edits, probably from the editor.\n\nOK: replace this device's data with the server copy.\nCancel: overwrite the server with this device's data."))pull();
+      else push(true);
+    }
+    else{syncNote("Not saved: "+(j.error||"unknown error")+(j._status===0?" Your data is still safe on this device.":""));toast("Not saved to server");}
+  });
+}
+function pull(){
+  api("get&id="+encodeURIComponent(courseId)).then(function(j){
+    if(j._status!==200||!j.data){syncNote("Could not load: "+(j.error||"unknown error"));return;}
+    holes=j.data.holes||[];holes.forEach(function(h){if(!Array.isArray(h.waypoints))h.waypoints=[]});
+    units=j.data.units||units;courseName=j.data.courseName||courseName;serverRev=j.rev;
+    cur=holes.length?holes[holes.length-1].n+1:1;
+    persist();renderAll();syncNote("Loaded the server copy at "+clock()+".");
+  });
 }
 
 /* ---------- views + events ---------- */
@@ -411,9 +468,10 @@ document.addEventListener("click",function(e){
   }
   else if(a==="unit"){units=b.dataset.u;persist();renderAll();}
   else if(a==="export")exportJSON();
-  else if(a==="edit"){persist();location.href="editor.html#capture";}
+  else if(a==="push")push(false);
+  else if(a==="edit"){if(!courseId)courseId=uuid();persist();location.href="editor.html#capture";}
   else if(a==="clearall"){
-    arm(b,"Tap again to delete everything",function(){holes=[];cur=1;persist();renderAll();toast("All data deleted");});
+    arm(b,"Tap again to delete everything",function(){holes=[];cur=1;courseId="";serverRev=0;persist();renderAll();toast("All data deleted");});
   }
 });
 document.addEventListener("change",function(e){

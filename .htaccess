@@ -1,0 +1,10 @@
+# Keep private files off the web. Requires AllowOverride FileInfo (or All) for this folder.
+<FilesMatch "^(config\.php|worker\.php|schema\.sql|\.worker\.lock|worker\.log|generate_caddybook\.py)$">
+  Require all denied
+</FilesMatch>
+# Nothing in books/ should ever execute, and book folders shouldn't be listable.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^books/.*\.(php|phtml|py|sh)$ - [F]
+</IfModule>
+Options -Indexes

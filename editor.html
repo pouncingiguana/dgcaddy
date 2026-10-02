@@ -41,6 +41,8 @@ label{display:block;margin:8px 0 3px}
     <label class="small muted" for="file" style="margin-top:0">Course JSON</label>
     <input type="file" id="file" accept=".json,application/json">
     <button class="wide" id="fromCap" style="display:none;margin-top:8px">Load from capture page</button>
+    <button class="wide" id="srvBtn" style="margin-top:8px">Open from server</button>
+    <div id="srvList" class="small"></div>
     <div class="small muted" id="course" style="margin-top:6px"></div>
   </div>
   <div id="panel" style="display:none">
@@ -69,7 +71,10 @@ label{display:block;margin:8px 0 3px}
         <button id="sat" class="primary" style="flex:1">Satellite</button>
         <button id="osm" style="flex:1">Street map</button>
       </div>
-      <button class="primary wide" id="save">Download JSON</button>
+      <button class="primary wide" id="srvSave">Save to server</button>
+      <button class="wide" id="complete" style="margin-top:8px">Mark complete and build book</button>
+      <div class="small" id="book" style="margin:8px 0"></div>
+      <button class="wide" id="save">Download JSON</button>
       <p class="small muted" id="saveNote" style="margin:8px 0 0"></p>
     </div>
   </div>
@@ -81,7 +86,7 @@ label{display:block;margin:8px 0 3px}
 (function(){
 "use strict";
 var $=function(id){return document.getElementById(id)};
-var data=null,idx=0,adding=false,dirty=false,fileName="";
+var data=null,idx=0,adding=false,dirty=false,fileName="",courseId="",serverRev=0,pollT=null;
 
 var map=L.map("map",{maxZoom:21,zoomSnap:0.25}).setView([41.575,-85.86],16);
 var sat=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
@@ -210,12 +215,14 @@ $("ob").addEventListener("change",function(){
 function label(h){return "Hole "+h.n+(h.par!=null?" (Par "+h.par+")":"")}
 
 /* load + save */
-function loadCourse(o,name){
+function loadCourse(o,name,meta){
     try{
       if(!o||!Array.isArray(o.holes)||!o.holes.length)throw new Error("bad");
       o.holes.forEach(function(h){if(!Array.isArray(h.waypoints))h.waypoints=[]});
       o.holes.sort(function(a,b){return a.n-b.n});
       data=o;fileName=name;dirty=false;idx=0;
+      courseId=(meta&&meta.id)||uuid();serverRev=(meta&&meta.rev)||0;
+      bookStatus(meta&&meta.status?{status:meta.status,links:meta.links,build_msg:meta.msg}:null);
       $("course").textContent=(o.courseName||"Untitled course")+" \u00b7 "+o.holes.length+" holes";
       $("sel").innerHTML=o.holes.map(function(h,i){return '<option value="'+i+'">'+label(h)+'</option>'}).join("");
       $("panel").style.display="block";$("saveNote").textContent="";
@@ -233,13 +240,13 @@ $("file").addEventListener("change",function(e){
 function capData(){
   try{
     var o=JSON.parse(localStorage.getItem("caddy:v2")||"null");
-    return o&&o.holes&&o.holes.length?{holes:o.holes,units:o.units||"ft",courseName:o.courseName||""}:null;
+    return o&&o.holes&&o.holes.length?{data:{holes:o.holes,units:o.units||"ft",courseName:o.courseName||""},id:o.courseId||"",rev:o.serverRev||0}:null;
   }catch(e){return null}
 }
 function loadCapture(){
-  var o=capData();if(!o)return;
+  var c=capData();if(!c)return;
   if(dirty&&!confirm("Replace your unsaved edits with the capture page data?"))return;
-  loadCourse(o,(o.courseName||"course")+".json");
+  loadCourse(c.data,(c.data.courseName||"course")+".json",{id:c.id,rev:c.rev});
 }
 if(capData())$("fromCap").style.display="block";
 $("fromCap").addEventListener("click",loadCapture);
@@ -251,6 +258,93 @@ $("save").addEventListener("click",function(){
   var a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();
   setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url)},1000);
   dirty=false;$("saveNote").textContent="Saved "+name;
+});
+function uuid(){
+  if(window.crypto&&crypto.randomUUID)return crypto.randomUUID();
+  var b=new Uint8Array(16);
+  if(window.crypto&&crypto.getRandomValues)crypto.getRandomValues(b);else for(var i=0;i<16;i++)b[i]=Math.random()*256;
+  b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;
+  var h=Array.prototype.map.call(b,function(x){return ("0"+x.toString(16)).slice(-2)}).join("");
+  return h.slice(0,8)+"-"+h.slice(8,12)+"-"+h.slice(12,16)+"-"+h.slice(16,20)+"-"+h.slice(20);
+}
+function token(){
+  var t="";try{t=localStorage.getItem("caddy:token")||""}catch(e){}
+  if(!t){t=prompt("Enter the caddy password")||"";if(t){try{localStorage.setItem("caddy:token",t)}catch(e){}}}
+  return t;
+}
+/* always resolves to the parsed JSON plus _status (0 = no connection) */
+function api(a,body){
+  var t=token();
+  if(!t)return Promise.resolve({error:"A password is needed.",_status:-1});
+  return fetch("api.php?a="+a,{method:body?"POST":"GET",headers:{"X-Token":t,"Content-Type":"application/json"},body:body?JSON.stringify(body):undefined})
+    .then(function(r){
+      return r.json().catch(function(){return {error:"Unexpected response from the server."}}).then(function(j){
+        if(r.status===401){try{localStorage.removeItem("caddy:token")}catch(e){}}
+        j._status=r.status;return j;
+      });
+    },function(){return {error:"No connection to the server.",_status:0}});
+}
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+function bookStatus(j){
+  var b=$("book");clearTimeout(pollT);
+  if(!j||!j.status||j.status==="draft"){b.textContent=(j&&serverRev)?"Saved to the server. Book not built yet.":"";return;}
+  if(j.status==="queued"||j.status==="building"){
+    b.textContent=j.status==="queued"?"Queued. The builder checks every minute.":"Building the book…";
+    pollT=setTimeout(poll,8000);return;
+  }
+  if(j.status==="built"&&j.links){
+    b.innerHTML='Book is ready: <a href="'+esc(j.links.print)+'">print PDF</a>, <a href="'+esc(j.links.phone)+'">phone PDF</a>, <a href="'+esc(j.links.web)+'">web page</a>.';return;
+  }
+  b.textContent="Build failed: "+(j.build_msg||"unknown error");
+}
+function poll(){
+  api("status&id="+encodeURIComponent(courseId)).then(function(j){
+    if(j._status===200)bookStatus(j);
+    else if(j._status===0)pollT=setTimeout(poll,15000);
+  });
+}
+function saveServer(force){
+  if(!data)return Promise.resolve(false);
+  $("saveNote").textContent="Saving to the server…";
+  return api("save",{id:courseId,data:data,base_rev:serverRev,force:!!force}).then(function(j){
+    if(j._status===200){serverRev=j.rev;dirty=false;$("saveNote").textContent="Saved to the server.";bookStatus({status:"draft"});return true;}
+    if(j._status===409){
+      if(confirm("The server copy changed after you opened it.\n\nOK: overwrite it with your version.\nCancel: leave both as they are."))return saveServer(true);
+      $("saveNote").textContent="Not saved: the server copy is newer.";return false;
+    }
+    $("saveNote").textContent="Not saved: "+(j.error||"unknown error");return false;
+  });
+}
+$("srvSave").addEventListener("click",function(){saveServer(false)});
+$("complete").addEventListener("click",function(){
+  if(!data)return;
+  var p=(dirty||!serverRev)?saveServer(false):Promise.resolve(true);
+  p.then(function(ok){
+    if(!ok)return;
+    return api("complete",{id:courseId}).then(function(j){
+      if(j._status===200)bookStatus({status:j.status});
+      else $("book").textContent=j.error||"Could not start the build.";
+    });
+  });
+});
+$("srvBtn").addEventListener("click",function(){
+  var box=$("srvList");box.textContent="Loading…";
+  api("list").then(function(j){
+    if(j._status!==200){box.textContent=j.error||"Could not load the list.";return;}
+    if(!j.courses.length){box.textContent="No courses on the server yet. Save one from the capture page.";return;}
+    box.innerHTML=j.courses.map(function(c){
+      return '<div class="item"><span>'+esc(c.name||"Untitled course")+'<br><span class="muted">'+esc(c.status)+' · '+esc(c.updated_at)+'</span></span><button data-id="'+esc(c.id)+'" style="color:var(--text)">Open</button></div>';
+    }).join("");
+  });
+});
+$("srvList").addEventListener("click",function(e){
+  var b=e.target.closest("button[data-id]");if(!b)return;
+  if(dirty&&!confirm("Replace your unsaved edits with the server copy?"))return;
+  api("get&id="+encodeURIComponent(b.dataset.id)).then(function(j){
+    if(j._status!==200||!j.data){$("srvList").textContent=j.error||"Could not open that course.";return;}
+    loadCourse(j.data,(j.name||"course")+".json",{id:j.id,rev:j.rev,status:j.status,links:j.links,msg:j.build_msg});
+    $("srvList").innerHTML="";
+  });
 });
 $("sat").addEventListener("click",function(){setBase("sat")});
 $("osm").addEventListener("click",function(){setBase("osm")});
