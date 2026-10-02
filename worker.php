@@ -27,6 +27,23 @@ $db = new PDO(DB_DSN, DB_USER, DB_PASS, [
 // A previous run that died mid-build leaves 'building' behind. We hold the lock, so nothing is really building.
 $db->exec("UPDATE courses SET status='queued' WHERE status='building'");
 
+/** Moves the finished files into the book's folder. Returns '' on success, or a message saying what went wrong. */
+function publish_book($tmp, $dir) {
+    $user = function_exists('posix_geteuid') ? (posix_getpwuid(posix_geteuid())['name'] ?? '?') : '?';
+    if (!is_dir($dir) && !@mkdir($dir, 0775, true)) {
+        return "Could not create $dir as user '$user'.";
+    }
+    foreach (glob($tmp . '/*') as $f) {
+        $name = basename($f);
+        if ($name === 'course.json') continue;
+        if (!@rename($f, $dir . '/' . $name)) {
+            return "Could not write $dir/$name as user '$user'. The folder or file is probably owned by a different user. "
+                 . "Fix: chown -R $user " . dirname($dir) . "   (or run the worker as the user that owns it).";
+        }
+    }
+    return '';
+}
+
 $built = 0;
 while (true) {
     $row = $db->query("SELECT id,public_id,name,data,rev FROM courses WHERE status='queued' ORDER BY queued_at LIMIT 1")->fetch();
@@ -60,9 +77,10 @@ while (true) {
     $cur->execute([$row['id']]);
     $now = $cur->fetch();
 
-    if ($code === 0 && !$missing) {
-        @mkdir($dir, 0775, true);
-        foreach (glob($tmp . '/*') as $f) { if (basename($f) !== 'course.json') rename($f, $dir . '/' . basename($f)); }
+    // A build only counts once its files are really in place.
+    $moveErr = ($code === 0 && !$missing) ? publish_book($tmp, $dir) : '';
+
+    if ($code === 0 && !$missing && $moveErr === '') {
         $unchanged = $now && (int)$now['rev'] === (int)$row['rev'];
         $db->prepare("UPDATE courses SET status=?, build_msg=NULL, built_at=? WHERE id=? AND status='building'")
            ->execute([$unchanged ? 'built' : 'draft', date('Y-m-d H:i:s'), $row['id']]);
@@ -81,7 +99,8 @@ while (true) {
             ['name' => 'Build time', 'value' => round(microtime(true) - $t0) . ' s', 'inline' => true],
         ]);
     } else {
-        $msg = $code !== 0 ? "Generator exited with code $code.\n$log" : 'Generator finished but did not create: ' . implode(', ', $missing) . "\n$log";
+        $msg = $moveErr !== '' ? "The book was built but could not be saved.\n$moveErr"
+             : ($code !== 0 ? "Generator exited with code $code.\n$log" : 'Generator finished but did not create: ' . implode(', ', $missing) . "\n$log");
         $db->prepare("UPDATE courses SET status='failed', build_msg=? WHERE id=? AND status='building'")->execute([$msg, $row['id']]);
         discord_notify('Build failed: ' . $title, "```\n" . notify_clip(str_replace('```', "'''", $msg), 1500) . "\n```", 0xef476f, [
             ['name' => 'Holes', 'value' => (string)$holes, 'inline' => true],
