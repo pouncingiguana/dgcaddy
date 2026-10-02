@@ -76,7 +76,8 @@ nav button.on{color:var(--accent);font-weight:700}
     </div>
     <div class="card">
       <h2>Course file (JSON)</h2>
-      <button class="primary" data-a="export" style="width:100%">Download JSON</button>
+      <button class="primary" data-a="edit" style="width:100%">Open in editor</button>
+      <button data-a="export" style="width:100%;margin-top:8px">Download JSON</button>
       <p class="small muted" id="exportNote" style="margin:8px 0 12px"></p>
       <label class="small muted" for="imp">Restore from a JSON file (replaces everything on this device)</label>
       <input type="file" id="imp" accept=".json,application/json">
@@ -410,6 +411,7 @@ document.addEventListener("click",function(e){
   }
   else if(a==="unit"){units=b.dataset.u;persist();renderAll();}
   else if(a==="export")exportJSON();
+  else if(a==="edit"){persist();location.href="editor.html#capture";}
   else if(a==="clearall"){
     arm(b,"Tap again to delete everything",function(){holes=[];cur=1;persist();renderAll();toast("All data deleted");});
   }

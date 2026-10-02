@@ -40,6 +40,7 @@ label{display:block;margin:8px 0 3px}
   <div class="card">
     <label class="small muted" for="file" style="margin-top:0">Course JSON</label>
     <input type="file" id="file" accept=".json,application/json">
+    <button class="wide" id="fromCap" style="display:none;margin-top:8px">Load from capture page</button>
     <div class="small muted" id="course" style="margin-top:6px"></div>
   </div>
   <div id="panel" style="display:none">
@@ -209,24 +210,40 @@ $("ob").addEventListener("change",function(){
 function label(h){return "Hole "+h.n+(h.par!=null?" (Par "+h.par+")":"")}
 
 /* load + save */
-$("file").addEventListener("change",function(e){
-  var f=e.target.files[0];if(!f)return;
-  var r=new FileReader();
-  r.onload=function(){
+function loadCourse(o,name){
     try{
-      var o=JSON.parse(r.result);
       if(!o||!Array.isArray(o.holes)||!o.holes.length)throw new Error("bad");
       o.holes.forEach(function(h){if(!Array.isArray(h.waypoints))h.waypoints=[]});
       o.holes.sort(function(a,b){return a.n-b.n});
-      data=o;fileName=f.name;dirty=false;idx=0;
+      data=o;fileName=name;dirty=false;idx=0;
       $("course").textContent=(o.courseName||"Untitled course")+" \u00b7 "+o.holes.length+" holes";
       $("sel").innerHTML=o.holes.map(function(h,i){return '<option value="'+i+'">'+label(h)+'</option>'}).join("");
       $("panel").style.display="block";$("saveNote").textContent="";
       goHole(0);
-    }catch(err){$("course").textContent="That file isn't a valid course JSON."}
-  };
+    }catch(err){$("course").textContent="That isn't a valid course."}
+}
+$("file").addEventListener("change",function(e){
+  var f=e.target.files[0];if(!f)return;
+  var r=new FileReader();
+  r.onload=function(){var o=null;try{o=JSON.parse(r.result)}catch(x){}loadCourse(o,f.name)};
   r.readAsText(f);
 });
+
+/* hand-off from the capture page (same browser, same site) */
+function capData(){
+  try{
+    var o=JSON.parse(localStorage.getItem("caddy:v2")||"null");
+    return o&&o.holes&&o.holes.length?{holes:o.holes,units:o.units||"ft",courseName:o.courseName||""}:null;
+  }catch(e){return null}
+}
+function loadCapture(){
+  var o=capData();if(!o)return;
+  if(dirty&&!confirm("Replace your unsaved edits with the capture page data?"))return;
+  loadCourse(o,(o.courseName||"course")+".json");
+}
+if(capData())$("fromCap").style.display="block";
+$("fromCap").addEventListener("click",loadCapture);
+if(location.hash==="#capture")loadCapture();
 $("save").addEventListener("click",function(){
   if(!data)return;
   var name=(fileName.replace(/\.json$/i,"").replace(/_updated$/i,"")||"course")+"_updated.json";
