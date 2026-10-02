@@ -1,5 +1,6 @@
 <?php
 require __DIR__ . '/config.php';
+require __DIR__ . '/notify.php';
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: no-store');
 
@@ -104,7 +105,7 @@ case 'complete':
     // Marks the layout finished and queues the book build. The worker picks it up within a minute.
     $id = $body['id'] ?? '';
     if (!valid_id($id)) out(400, ['error' => 'Bad course id.']);
-    $s = $db->prepare("SELECT data,status FROM courses WHERE id=?");
+    $s = $db->prepare("SELECT name,data,status FROM courses WHERE id=?");
     $s->execute([$id]);
     $r = $s->fetch();
     if (!$r) out(404, ['error' => 'Save the course to the server first.']);
@@ -114,6 +115,14 @@ case 'complete':
     $bad = incomplete_holes($d);
     if ($bad) out(400, ['error' => 'Holes missing a tee or pin: ' . implode(', ', $bad) . '.']);
     $db->prepare("UPDATE courses SET status='queued', build_msg=NULL, queued_at=? WHERE id=?")->execute([$now, $id]);
+    // Tell Discord after the response has gone out, so a slow webhook never delays the button.
+    $title = 'Book queued: ' . ($r['name'] !== '' ? $r['name'] : 'Untitled course');
+    $holes = count($d['holes']);
+    register_shutdown_function(function () use ($title, $holes) {
+        if (function_exists('fastcgi_finish_request')) fastcgi_finish_request();
+        discord_notify($title, 'Waiting for the builder, which checks every minute.', 0xfbbf24,
+            [['name' => 'Holes', 'value' => (string)$holes, 'inline' => true]]);
+    });
     out(200, ['status' => 'queued']);
 
 case 'delete':

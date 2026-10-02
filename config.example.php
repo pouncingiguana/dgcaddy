@@ -10,3 +10,7 @@ const PHP_CLI   = '/usr/bin/php';                          // command-line PHP (
 const PYTHON    = '/usr/bin/python3';                      // needs: requests pillow matplotlib reportlab
 const GENERATOR = __DIR__ . '/generate_caddybook.py';
 const BOOKS_DIR = __DIR__ . '/books';                      // must be writable by the user that runs the worker
+
+// Optional Discord notifications (queued, started, finished). Leave DISCORD_WEBHOOK empty to turn them off.
+const DISCORD_WEBHOOK = '';                                // https://discord.com/api/webhooks/...  Treat it like a password.
+const SITE_URL        = 'https://example.com/dgcaddy';     // where these pages live, no trailing slash. Used for the file links.
