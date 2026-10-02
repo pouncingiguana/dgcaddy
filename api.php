@@ -74,7 +74,8 @@ case 'save':
     if (!is_array($data) || !isset($data['holes']) || !is_array($data['holes'])) out(400, ['error' => 'No hole data in request.']);
     $json = json_encode($data, JSON_UNESCAPED_SLASHES);
     if (strlen($json) > 2000000) out(413, ['error' => 'Course data is too large.']);
-    $name = mb_substr(trim($data['courseName'] ?? ''), 0, 200);
+    // First 200 characters of the name. Uses PCRE instead of mb_substr so the mbstring module isn't required.
+    $name = preg_match('/^.{0,200}/su', trim((string)($data['courseName'] ?? '')), $m) ? $m[0] : '';
     $base = (int)($body['base_rev'] ?? 0);
 
     $db->beginTransaction();
