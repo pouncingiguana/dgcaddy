@@ -1,0 +1,1 @@
+* * * * * /usr/bin/php /path/to/worker.php >> /path/to/worker.log 2>&1
