@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Disc Golf Course Waypoint Editor</title>
+    <!-- Leaflet CSS & JS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; display: flex; height: 100vh; }
+        #sidebar { width: 340px; padding: 15px; background: #f4f4f9; border-right: 1px solid #ccc; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; }
+        #map { flex-grow: 1; height: 100%; }
+        .control-group { background: #fff; padding: 10px; border-radius: 6px; border: 1px solid #ddd; }
+        button { cursor: pointer; padding: 8px 12px; border: none; border-radius: 4px; background: #007bff; color: white; width: 100%; font-weight: bold; margin-top: 5px; }
+        button:hover { background: #0056b3; }
+        button.active { background: #28a745; }
+        .waypoint-list { max-height: 150px; overflow-y: auto; margin-top: 8px; font-size: 0.85em; }
+        .waypoint-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+        .btn-del { background: #dc3545; color: white; border: none; padding: 2px 6px; border-radius: 3px; width: auto; font-size: 0.8em; margin-top: 0; }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <h2>Course Editor</h2>
+    <div class="control-group">
+        <label><b>1. Load JSON File</b></label>
+        <input type="file" id="fileInput" accept=".json" style="margin-top: 5px; width: 100%;">
+    </div>
+
+    <div class="control-group" id="holeControls" style="display: none;">
+        <label><b>2. Select Hole</b></label>
+        <select id="holeSelect" style="width: 100%; padding: 6px; margin-top: 5px;"></select>
+        <div id="holeDetails" style="font-size: 0.85em; margin-top: 8px; color: #555;"></div>
+    </div>
+
+    <div class="control-group" id="editorControls" style="display: none;">
+        <label><b>3. Waypoint Mode</b></label>
+        <button id="addWpBtn">Click Map to Add Waypoint</button>
+        <div class="waypoint-list" id="wpList"></div>
+    </div>
+
+    <div class="control-group" id="exportControls" style="display: none;">
+        <label><b>4. Export Data</b></label>
+        <button id="exportBtn" style="background: #17a2b8;">Download Updated JSON</button>
+    </div>
+</div>
+
+<div id="map"></div>
+
+<script>
+    let courseData = null;
+    let selectedHoleIndex = 0;
+    let addingWaypoint = false;
+    let markersGroup = L.layerGroup();
+    let linesGroup = L.layerGroup();
+
+    // Initialize Map (default centered on Goshen/Midwest region)
+    const map = L.map('map').setView([41.575, -85.860], 16);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+
+    markersGroup.addTo(map);
+    linesGroup.addTo(map);
+
+    // Color Markers
+    function createCustomIcon(color, text) {
+        return L.divIcon({
+            className: 'custom-pin',
+            html: `<div style="background-color:${color}; color:white; border-radius:50%; width:24px; height:24px; display:flex; align-items:center; justify-content:center; font-weight:bold; font-size:11px; border:2px solid white; box-shadow:0 0 4px rgba(0,0,0,0.4);">${text}</div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+        });
+    }
+
+    // Load JSON File
+    document.getElementById('fileInput').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            courseData = JSON.parse(event.target.result);
+            initCourseUI();
+        };
+        reader.readAsText(file);
+    });
+
+    function initCourseUI() {
+        const select = document.getElementById('holeSelect');
+        select.innerHTML = '';
+        
+        courseData.holes.forEach((hole, idx) => {
+            if (!hole.waypoints) hole.waypoints = []; // Ensure waypoints array exists
+            const opt = document.createElement('option');
+            opt.value = idx;
+            opt.textContent = `Hole ${hole.n} (Par ${hole.par || '?'})`;
+            select.appendChild(opt);
+        });
+
+        document.getElementById('holeControls').style.display = 'block';
+        document.getElementById('editorControls').style.display = 'block';
+        document.getElementById('exportControls').style.display = 'block';
+
+        renderHole(0);
+    }
+
+    document.getElementById('holeSelect').addEventListener('change', (e) => {
+        selectedHoleIndex = parseInt(e.target.value);
+        renderHole(selectedHoleIndex);
+    });
+
+    function renderHole(idx) {
+        markersGroup.clearLayers();
+        linesGroup.clearLayers();
+        const hole = courseData.holes[idx];
+
+        // Update Info
+        document.getElementById('holeDetails').innerHTML = `
+            <b>OB:</b> ${hole.ob || 'None'}<br>
+            <b>Waypoints:</b> ${hole.waypoints.length}
+        `;
+
+        const pathCoords = [];
+
+        // 1. Tee Marker
+        if (hole.tee) {
+            const teeLatLng = [hole.tee.lat, hole.tee.lon];
+            pathCoords.push(teeLatLng);
+            const teeMarker = L.marker(teeLatLng, {
+                icon: createCustomIcon('#28a745', 'T'),
+                draggable: true
+            }).addTo(markersGroup);
+
+            teeMarker.on('dragend', (e) => {
+                const newPos = e.target.getLatLng();
+                hole.tee.lat = newPos.lat;
+                hole.tee.lon = newPos.lng;
+                renderHole(idx);
+            });
+        }
+
+        // 2. Waypoint Markers
+        hole.waypoints.forEach((wp, wpIdx) => {
+            const wpLatLng = [wp.lat, wp.lon];
+            pathCoords.push(wpLatLng);
+            const wpMarker = L.marker(wpLatLng, {
+                icon: createCustomIcon('#ff9800', wpIdx + 1),
+                draggable: true
+            }).addTo(markersGroup);
+
+            wpMarker.on('dragend', (e) => {
+                const newPos = e.target.getLatLng();
+                wp.lat = newPos.lat;
+                wp.lon = newPos.lng;
+                renderHole(idx);
+            });
+        });
+
+        // 3. Pin Marker
+        if (hole.pin) {
+            const pinLatLng = [hole.pin.lat, hole.pin.lon];
+            pathCoords.push(pinLatLng);
+            const pinMarker = L.marker(pinLatLng, {
+                icon: createCustomIcon('#dc3545', 'P'),
+                draggable: true
+            }).addTo(markersGroup);
+
+            pinMarker.on('dragend', (e) => {
+                const newPos = e.target.getLatLng();
+                hole.pin.lat = newPos.lat;
+                hole.pin.lon = newPos.lng;
+                renderHole(idx);
+            });
+        }
+
+        // Draw Fairway Line
+        if (pathCoords.length > 1) {
+            L.polyline(pathCoords, { color: '#007bff', weight: 3, dashArray: '6, 6' }).addTo(linesGroup);
+            map.fitBounds(L.polyline(pathCoords).getBounds(), { padding: [50, 50] });
+        }
+
+        updateWaypointListUI(hole);
+    }
+
+    function updateWaypointListUI(hole) {
+        const wpList = document.getElementById('wpList');
+        wpList.innerHTML = '';
+        hole.waypoints.forEach((wp, wpIdx) => {
+            const div = document.createElement('div');
+            div.className = 'waypoint-item';
+            div.innerHTML = `
+                <span><b>WP ${wpIdx + 1}:</b> ${wp.lat.toFixed(5)}, ${wp.lon.toFixed(5)}</span>
+                <button class="btn-del" onclick="removeWaypoint(${wpIdx})">Del</button>
+            `;
+            wpList.appendChild(div);
+        });
+    }
+
+    // Toggle Add Waypoint Mode
+    const addWpBtn = document.getElementById('addWpBtn');
+    addWpBtn.addEventListener('click', () => {
+        addingWaypoint = !addingWaypoint;
+        if (addingWaypoint) {
+            addWpBtn.textContent = 'Click Map to Place (Active)';
+            addWpBtn.classList.add('active');
+            map.getContainer().style.cursor = 'crosshair';
+        } else {
+            resetAddWpBtn();
+        }
+    });
+
+    function resetAddWpBtn() {
+        addingWaypoint = false;
+        addWpBtn.textContent = 'Click Map to Add Waypoint';
+        addWpBtn.classList.remove('active');
+        map.getContainer().style.cursor = '';
+    }
+
+    // Map Click Event
+    map.on('click', (e) => {
+        if (!addingWaypoint || !courseData) return;
+        const hole = courseData.holes[selectedHoleIndex];
+        
+        hole.waypoints.push({
+            lat: e.latlng.lat,
+            lon: e.latlng.lng
+        });
+
+        renderHole(selectedHoleIndex);
+        resetAddWpBtn();
+    });
+
+    // Remove Waypoint function
+    window.removeWaypoint = function(wpIdx) {
+        const hole = courseData.holes[selectedHoleIndex];
+        hole.waypoints.splice(wpIdx, 1);
+        renderHole(selectedHoleIndex);
+    };
+
+    // Export Updated JSON
+    document.getElementById('exportBtn').addEventListener('click', () => {
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(courseData, null, 2));
+        const downloadAnchor = document.createElement('a');
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute("download", `${courseData.courseName || 'course'}_updated.json`);
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+    });
+</script>
+</body>
+</html>

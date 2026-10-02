@@ -1,0 +1,642 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Caddy Book Recorder</title>
+<style>
+:root{
+  --bg:#f3f5f1;--card:#ffffff;--text:#18211b;--muted:#647268;--accent:#1f7a4d;--accent-text:#ffffff;
+  --line:#d8dfd9;--good:#1f8a4c;--warn:#b7791f;--bad:#c0392b;--tee:#2b6cb0;--pin:#d9480f;--soft:#e9efe9;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#101410;--card:#1a211b;--text:#e8eee9;--muted:#93a297;--accent:#3fae77;--accent-text:#08140d;
+    --line:#2d372f;--good:#4cc27d;--warn:#e0a63c;--bad:#ef6a5b;--tee:#63a4e8;--pin:#ff8a4d;--soft:#232c25;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#101410;--card:#1a211b;--text:#e8eee9;--muted:#93a297;--accent:#3fae77;--accent-text:#08140d;
+  --line:#2d372f;--good:#4cc27d;--warn:#e0a63c;--bad:#ef6a5b;--tee:#63a4e8;--pin:#ff8a4d;--soft:#232c25;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent}
+main{max-width:640px;margin:0 auto;padding:14px 14px 96px}
+h1{font-size:18px;margin:0 0 12px}
+h2{font-size:15px;margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.muted{color:var(--muted)}.small{font-size:13px}
+.row{display:flex;gap:10px;align-items:center}.between{justify-content:space-between}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{font:inherit;color:var(--text);background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer}
+button:active{transform:scale(.98)}
+button.primary{background:var(--accent);color:var(--accent-text);border-color:transparent;font-weight:700}
+button.tee{background:var(--tee);color:#fff;border-color:transparent;font-weight:700}
+button.pin{background:var(--pin);color:#fff;border-color:transparent;font-weight:700}
+button.big{padding:20px 10px;font-size:18px}
+button:disabled{opacity:.45}
+select{font:inherit;color:var(--text);background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:6px 8px}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;background:var(--muted);margin-right:6px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-variant-numeric:tabular-nums}
+.kv span:nth-child(odd){color:var(--muted)}
+.holebar{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.holenum{font-size:30px;font-weight:800}
+.bar{height:10px;background:var(--soft);border-radius:6px;overflow:hidden;margin:10px 0 4px}
+.bar>i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+.stat{display:flex;gap:18px;flex-wrap:wrap}.stat b{font-size:22px;display:block}
+nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom,0px);z-index:5}
+nav button{flex:1;border:0;border-radius:0;background:transparent;padding:14px 4px;color:var(--muted);font-size:14px}
+nav button.on{color:var(--accent);font-weight:700}
+.view{display:none}.view.on{display:block}
+.hrow{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
+.hrow:last-child{border-bottom:0}
+.hrow .n{font-weight:800;width:38px}
+.hrow .info{flex:1;min-width:0;font-variant-numeric:tabular-nums}
+.hrow button{padding:8px 10px;font-size:13px}
+svg.map{width:100%;height:auto;display:block;background:var(--soft);border-radius:10px}
+.svgt{fill:var(--text);font:600 11px system-ui,sans-serif}
+.svgh{paint-order:stroke;stroke:var(--soft);stroke-width:3px}
+#toast{position:fixed;left:50%;bottom:calc(72px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:20px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:9;max-width:90%;text-align:center}
+#toast.on{opacity:1}
+#overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:16px;z-index:20}
+#overlay.on{display:flex}
+#overlay .box{background:var(--card);border-radius:14px;padding:14px;width:100%;max-width:560px}
+textarea{width:100%;height:220px;font:12px/1.3 ui-monospace,monospace;background:var(--soft);color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px}
+.warnbox{border-left:4px solid var(--warn);padding-left:10px}
+.errbox{border-left:4px solid var(--bad);padding-left:10px}
+</style>
+</head>
+<body>
+<main>
+  <h1>⛳ Caddy Book Recorder</h1>
+  <div class="small muted" id="courseNameLabel" style="margin:-8px 0 12px"></div>
+
+  <section id="v-capture" class="view on">
+    <div class="card" id="gpsBox"></div>
+    <div class="card" id="holeBox"></div>
+    <div class="card" id="capBox" style="display:none"></div>
+  </section>
+
+  <section id="v-holes" class="view">
+    <div class="card" id="holesBox"></div>
+  </section>
+
+  <section id="v-book" class="view"><div id="bookInner"></div></section>
+
+  <section id="v-export" class="view">
+    <div class="card">
+      <h2>Course name</h2>
+      <input type="text" id="courseNameInput" placeholder="e.g. Riverbend Temp Course" style="width:100%;font:inherit;color:var(--text);background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:10px">
+      <p class="small muted" style="margin:8px 0 0">Included in every export file and its name.</p>
+    </div>
+    <div class="card">
+      <h2>Units</h2>
+      <div class="grid2">
+        <button data-a="unit" data-u="ft" id="u-ft">Feet</button>
+        <button data-a="unit" data-u="m" id="u-m">Meters</button>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Export</h2>
+      <div class="grid2" style="margin-bottom:10px">
+        <button class="primary" data-a="exp" data-f="gpx">GPX</button>
+        <button class="primary" data-a="exp" data-f="kml">KML</button>
+        <button class="primary" data-a="exp" data-f="csv">CSV</button>
+        <button data-a="exp" data-f="json">JSON backup</button>
+      </div>
+      <p class="small muted">GPX/KML open in Google Earth, QGIS, Gaia, or Google My Maps for satellite-imagery overlays. CSV has distances and elevation change for a spreadsheet.</p>
+      <p class="small muted" id="dlNote"></p>
+    </div>
+    <div class="card">
+      <h2>Upload backup to server</h2>
+      <button class="primary" id="uploadBtn" style="width:100%">Upload backup to server</button>
+      <p class="small muted" id="uploadNote" style="margin:8px 0 0">Sends the JSON backup to save-backup.php in this page's folder. A file with the same name is overwritten.</p>
+    </div>
+    <div class="card">
+      <h2>Restore from backup</h2>
+      <input type="file" id="imp" accept=".json,application/json">
+      <p class="small muted">Replaces everything currently stored on this device.</p>
+    </div>
+    <div class="card warnbox">
+      <h2>About elevation</h2>
+      <p class="small muted" style="margin:0">Web pages can read GPS altitude but not the phone's barometer, so elevation change is noisy (often ±5–15 m per point). Averaging helps. For firmer numbers, cross-check with terrain data (USGS/DEM) or a barometric app such as Gaia.</p>
+    </div>
+    <div class="card">
+      <button data-a="clearall" id="clearAll" style="width:100%;color:var(--bad)">Delete all recorded data</button>
+    </div>
+  </section>
+</main>
+
+<nav>
+  <button data-a="tab" data-v="capture" class="on">Capture</button>
+  <button data-a="tab" data-v="holes">Holes</button>
+  <button data-a="tab" data-v="book">Book</button>
+  <button data-a="tab" data-v="export">Export</button>
+</nav>
+<div id="toast"></div>
+<div id="overlay"><div class="box">
+  <h2 id="ovTitle">Copy this</h2>
+  <p class="small muted">Saving failed. Copy the text and paste it into a file with the name above.</p>
+  <textarea id="ovText" readonly></textarea>
+  <div class="grid2" style="margin-top:10px"><button class="primary" id="ovCopy">Copy</button><button id="ovClose">Close</button></div>
+</div></div>
+
+<script>
+(function(){
+"use strict";
+var R=6371008.8, FT=3.28084, KEY="dgcaddy:v1";
+var UPLOAD_TOKEN=""; // set to match $REQUIRED_TOKEN in save-backup.php, or leave "" if you didn't set one there
+var UPLOAD_URL="save-backup.php";
+var holes=[], cur=1, units="ft", durSec=10, courseName="";
+var last=null, watchId=null, cap=null, gpsErr=null, wake=null, dl=null;
+
+function $(id){return document.getElementById(id)}
+function rad(d){return d*Math.PI/180}
+function deg(r){return r*180/Math.PI}
+
+/* ---------- storage ---------- */
+function load(){
+  try{
+    var s=localStorage.getItem(KEY);
+    if(s){var o=JSON.parse(s);holes=o.holes||[];cur=o.cur||1;units=o.units||"ft";durSec=o.durSec||10;courseName=o.courseName||"";}
+  }catch(e){}
+}
+function persist(){
+  try{localStorage.setItem(KEY,JSON.stringify({holes:holes,cur:cur,units:units,durSec:durSec,courseName:courseName}));}catch(e){}
+}
+function getHole(n,create){
+  for(var i=0;i<holes.length;i++) if(holes[i].n===n) return holes[i];
+  if(!create) return null;
+  var h={n:n,tee:null,pin:null};
+  holes.push(h);holes.sort(function(a,b){return a.n-b.n});
+  return h;
+}
+
+/* ---------- math + format ---------- */
+function haversine(a,b){
+  var dp=rad(b.lat-a.lat),dl2=rad(b.lon-a.lon);
+  var x=Math.sin(dp/2)*Math.sin(dp/2)+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dl2/2)*Math.sin(dl2/2);
+  return 2*R*Math.asin(Math.min(1,Math.sqrt(x)));
+}
+function bearing(a,b){
+  var p1=rad(a.lat),p2=rad(b.lat),d=rad(b.lon-a.lon);
+  var y=Math.sin(d)*Math.cos(p2),x=Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(d);
+  return (deg(Math.atan2(y,x))+360)%360;
+}
+var DIRS=["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+function compass(b){return DIRS[Math.round(b/22.5)%16]}
+function fd(m){return units==="ft"?Math.round(m*FT)+" ft":Math.round(m)+" m"}
+function fe(m){
+  var v=units==="ft"?m*FT:m,r=Math.round(v);
+  return (r>0?"+":r<0?"\u2212":"")+Math.abs(r)+(units==="ft"?" ft":" m");
+}
+function stats(h){
+  if(!h||!h.tee||!h.pin) return null;
+  var s={d:haversine(h.tee,h.pin),b:bearing(h.tee,h.pin),dz:null,dzErr:null};
+  if(h.tee.alt!=null&&h.pin.alt!=null){
+    s.dz=h.pin.alt-h.tee.alt;
+    if(h.tee.altAcc!=null&&h.pin.altAcc!=null) s.dzErr=Math.sqrt(h.tee.altAcc*h.tee.altAcc+h.pin.altAcc*h.pin.altAcc)/Math.sqrt(Math.max(1,Math.min(h.tee.n,h.pin.n)));
+  }
+  return s;
+}
+function proj(pts){
+  var la=0,lo=0;
+  pts.forEach(function(p){la+=p.lat;lo+=p.lon});
+  la/=pts.length;lo/=pts.length;
+  var c=Math.cos(rad(la));
+  return pts.map(function(p){return {x:rad(p.lon-lo)*R*c,y:rad(p.lat-la)*R}});
+}
+
+/* ---------- toast ---------- */
+var toastT=null;
+function toast(msg){
+  var t=$("toast");t.textContent=msg;t.classList.add("on");
+  clearTimeout(toastT);toastT=setTimeout(function(){t.classList.remove("on")},2200);
+}
+
+/* ---------- GPS ---------- */
+function startGPS(){
+  gpsErr=null;
+  if(!("geolocation" in navigator)){gpsErr={msg:"This browser has no geolocation support."};renderGPS();return;}
+  if(watchId!=null){try{navigator.geolocation.clearWatch(watchId)}catch(e){}}
+  try{
+    watchId=navigator.geolocation.watchPosition(onPos,onErr,{enableHighAccuracy:true,maximumAge:0,timeout:20000});
+  }catch(e){gpsErr={msg:"Could not start GPS: "+e.message};}
+  renderGPS();
+}
+function onPos(p){
+  var c=p.coords;
+  gpsErr=null;
+  last={lat:c.latitude,lon:c.longitude,alt:(c.altitude==null||!isFinite(c.altitude))?null:c.altitude,acc:c.accuracy,altAcc:c.altitudeAccuracy,t:Date.now(),ts:p.timestamp};
+  renderGPS();
+  if(cap){
+    var prev=cap.samples[cap.samples.length-1];
+    if(!prev||prev.ts!==last.ts) cap.samples.push(last);
+    renderCap();
+  }
+}
+function onErr(e){
+  var msg=e.code===1?"Location permission was denied. Allow location for this page in Chrome's site settings, then tap Retry."
+    :e.code===2?"Position unavailable. Check that location is on and you have sky view."
+    :e.code===3?"GPS timed out. Move into the open and tap Retry.":(e.message||"GPS error.");
+  gpsErr={msg:msg,code:e.code};
+  renderGPS();
+}
+function keepAwake(){
+  try{
+    if(navigator.wakeLock&&!wake){
+      navigator.wakeLock.request("screen").then(function(w){wake=w;w.addEventListener("release",function(){wake=null})}).catch(function(){});
+    }
+  }catch(e){}
+}
+document.addEventListener("visibilitychange",function(){if(document.visibilityState==="visible")keepAwake()});
+
+/* ---------- capture ---------- */
+function avgPoint(ss){
+  var minAcc=Infinity;
+  ss.forEach(function(s){if(s.acc<minAcc)minAcc=s.acc});
+  var keep=ss.filter(function(s){return s.acc<=2*minAcc+1});
+  var sw=0,lat=0,lon=0,aw=0,alt=0,accS=0,altAccS=0,ac=0;
+  keep.forEach(function(s){
+    var a=Math.max(s.acc||10,1),w=1/(a*a);
+    sw+=w;lat+=s.lat*w;lon+=s.lon*w;accS+=a;
+    if(s.alt!=null){
+      var av=Math.max(s.altAcc||a*1.5,1),wa=1/(av*av);
+      aw+=wa;alt+=s.alt*wa;altAccS+=av;ac++;
+    }
+  });
+  return {lat:lat/sw,lon:lon/sw,alt:aw?alt/aw:null,acc:accS/keep.length,altAcc:ac?altAccS/ac:null,n:keep.length,t:Date.now()};
+}
+function beginCapture(kind){
+  if(cap) return;
+  if(!last){toast("Waiting for a GPS fix\u2026");return;}
+  var seed=(Date.now()-last.t<3000)?[last]:[];
+  cap={kind:kind,hole:cur,start:Date.now(),dur:durSec*1000,samples:seed};
+  cap.timer=setInterval(function(){
+    if(Date.now()-cap.start>=cap.dur) finishCapture(); else renderCap();
+  },200);
+  if(navigator.vibrate){try{navigator.vibrate(30)}catch(e){}}
+  renderCap();
+}
+function cancelCapture(){
+  if(!cap) return;
+  clearInterval(cap.timer);cap=null;renderCap();toast("Cancelled");
+}
+function finishCapture(){
+  clearInterval(cap.timer);
+  var c=cap;cap=null;
+  if(!c.samples.length){renderCap();toast("No GPS samples received. Try again.");return;}
+  var pt=avgPoint(c.samples);
+  var h=getHole(c.hole,true);
+  h[c.kind]=pt;
+  if(c.kind==="pin"){cur=c.hole+1;}
+  persist();
+  if(navigator.vibrate){try{navigator.vibrate([40,60,40])}catch(e){}}
+  toast("H"+c.hole+" "+(c.kind==="tee"?"tee":"pin")+" saved (\u00b1"+Math.round(pt.acc)+" m, "+pt.n+" fixes)");
+  renderCap();renderAll();
+}
+
+/* ---------- render: capture ---------- */
+function accClass(a){return a<=5?"var(--good)":a<=12?"var(--warn)":"var(--bad)"}
+function renderGPS(){
+  var b=$("gpsBox"),html="";
+  if(gpsErr){
+    html='<div class="errbox"><b>GPS problem</b><p class="small" style="margin:6px 0 10px">'+gpsErr.msg+'</p><button data-a="retry">Retry</button></div>';
+  }else if(!last){
+    html='<div class="row"><span class="dot"></span><b>Waiting for GPS fix\u2026</b></div><p class="small muted" style="margin:6px 0 0">Allow location when Chrome asks. Stand in the open for a few seconds.</p>';
+  }else{
+    var age=Math.round((Date.now()-last.t)/1000);
+    html='<div class="row between"><div class="row"><span class="dot" style="background:'+accClass(last.acc)+'"></span><b>\u00b1'+(units==="ft"?Math.round(last.acc*FT)+" ft":last.acc.toFixed(1)+" m")+'</b></div><span class="small muted">'+(age<2?"live":age+"s ago")+'</span></div>'+
+    '<div class="kv small" style="margin-top:8px"><span>Lat</span><span>'+last.lat.toFixed(6)+'</span><span>Lon</span><span>'+last.lon.toFixed(6)+'</span><span>Altitude</span><span>'+(last.alt==null?"not reported":Math.round(units==="ft"?last.alt*FT:last.alt)+(units==="ft"?" ft":" m")+(last.altAcc?" (\u00b1"+Math.round(units==="ft"?last.altAcc*FT:last.altAcc)+")":""))+'</span></div>';
+  }
+  b.innerHTML=html;
+}
+function renderHole(){
+  var h=getHole(cur,false),s=stats(h);
+  var teeTxt=h&&h.tee?"\u2713 \u00b1"+Math.round(h.tee.acc)+" m \u00b7 "+h.tee.n+" fixes":"not marked";
+  var pinTxt=h&&h.pin?"\u2713 \u00b1"+Math.round(h.pin.acc)+" m \u00b7 "+h.pin.n+" fixes":"not marked";
+  var busy=!!cap;
+  var html='<div class="holebar"><button data-a="prev"'+(cur<=1||busy?" disabled":"")+'>\u2039</button><div style="text-align:center"><div class="small muted">Hole</div><div class="holenum">'+cur+'</div></div><button data-a="next"'+(busy?" disabled":"")+'>\u203a</button></div>'+
+  '<div class="grid2" style="margin-top:12px">'+
+  '<div><button class="tee big" style="width:100%" data-a="mark" data-k="tee"'+(busy?" disabled":"")+'>Mark Tee</button><div class="small muted" style="text-align:center;margin-top:4px">'+teeTxt+'</div></div>'+
+  '<div><button class="pin big" style="width:100%" data-a="mark" data-k="pin"'+(busy?" disabled":"")+'>Mark Pin</button><div class="small muted" style="text-align:center;margin-top:4px">'+pinTxt+'</div></div></div>'+
+  '<div class="row between" style="margin-top:12px"><span class="small muted">Averaging time</span><select id="dur">'+[5,10,20,30].map(function(v){return '<option value="'+v+'"'+(v===durSec?" selected":"")+'>'+v+' s</option>'}).join("")+'</select></div>';
+  if(s){
+    html+='<div class="stat" style="margin-top:14px"><div><span class="small muted">Distance</span><b>'+fd(s.d)+'</b></div>'+
+    '<div><span class="small muted">Elevation</span><b>'+(s.dz==null?"\u2014":fe(s.dz))+'</b></div>'+
+    '<div><span class="small muted">Heading</span><b>'+Math.round(s.b)+'\u00b0 '+compass(s.b)+'</b></div></div>';
+  }
+  var parVal=h&&h.par!=null?h.par:"";
+  var obVal=h&&h.ob?h.ob:"";
+  html+='<div class="grid2" style="margin-top:14px"><div><label class="small muted" for="parInput">Par</label><input type="number" id="parInput" inputmode="numeric" min="1" max="7" step="1" value="'+parVal+'" placeholder="\u2014" style="width:100%;font:inherit;color:var(--text);background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:8px;margin-top:4px"></div>'+
+  '<div><label class="small muted" for="obInput">Out of bounds</label><textarea id="obInput" rows="1" placeholder="e.g. road right of fairway"'+
+  ' style="width:100%;font:inherit;color:var(--text);background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:8px;margin-top:4px;resize:vertical">'+esc(obVal)+'</textarea></div></div>';
+  html+='<p class="small muted" style="margin:12px 0 0">Stand on the front edge of the tee pad, or at the basket, and hold still while it averages. After a pin is saved, this jumps to the next hole.</p>';
+  $("holeBox").innerHTML=html;
+}
+function renderCap(){
+  var b=$("capBox");
+  if(!cap){b.style.display="none";b.innerHTML="";$("holeBox").dataset.busy="";renderHole();return;}
+  var el=Date.now()-cap.start,pct=Math.min(100,el/cap.dur*100);
+  var n=cap.samples.length;
+  b.style.display="block";
+  b.innerHTML='<div class="row between"><b>Averaging H'+cap.hole+' '+(cap.kind==="tee"?"tee":"pin")+'\u2026</b><span class="small muted">'+n+' fixes</span></div><div class="bar"><i style="width:'+pct.toFixed(0)+'%"></i></div><div class="row between"><span class="small muted">Hold still</span><button data-a="cancel" style="padding:8px 12px">Cancel</button></div>';
+  if(!$("holeBox").dataset.busy){$("holeBox").dataset.busy="1";renderHole();}
+}
+
+/* ---------- render: holes ---------- */
+function renderHoles(){
+  var b=$("holesBox");
+  if(!holes.length){b.innerHTML='<p class="muted" style="margin:0">Nothing recorded yet. Head to Capture and mark a tee.</p>';return;}
+  var html="<h2>Recorded holes</h2>";
+  holes.forEach(function(h){
+    var s=stats(h),info;
+    if(s){
+      info='<b>'+fd(s.d)+'</b> \u00b7 '+(s.dz==null?"elev \u2014":fe(s.dz)+(s.dzErr!=null?" (\u00b1"+Math.round(units==="ft"?s.dzErr*FT:s.dzErr)+")":""))+' \u00b7 '+compass(s.b);
+    }else{
+      info='<span class="muted">'+(h.tee?"tee only":h.pin?"pin only":"empty")+'</span>';
+    }
+    if(h.par!=null) info+=' \u00b7 Par '+h.par;
+    if(h.ob) info+='<div class="small muted" style="white-space:normal">OB: '+esc(h.ob)+'</div>';
+    html+='<div class="hrow"><div class="n">H'+h.n+'</div><div class="info">'+info+'</div><button data-a="go" data-n="'+h.n+'">Edit</button><button data-a="del" data-n="'+h.n+'" style="color:var(--bad)">Delete</button></div>';
+  });
+  b.innerHTML=html;
+}
+
+/* ---------- maps ---------- */
+function niceBar(scale){
+  var list=[5,10,20,25,50,100,200,250,500,1000],f=units==="ft"?FT:1;
+  for(var i=0;i<list.length;i++){
+    var px=list[i]/f*scale;
+    if(px>=50&&px<=120) return {val:list[i],px:px};
+  }
+  return {val:list[0],px:list[0]/f*scale};
+}
+function northArrow(W){
+  return '<g transform="translate('+(W-22)+',30)"><line x1="0" y1="10" x2="0" y2="-10" stroke="var(--text)" stroke-width="1.5"/><path d="M0,-14 L-4,-6 L4,-6 Z" fill="var(--text)"/><text class="svgt" x="0" y="24" text-anchor="middle">N</text></g>';
+}
+function holeSVG(h,k){
+  var W=340,H=230,pad=42,pts=proj([h.tee,h.pin]),t=pts[0],p=pts[1];
+  var w=Math.max(Math.abs(p.x-t.x),30),hh=Math.max(Math.abs(p.y-t.y),30);
+  var s=Math.min((W-2*pad)/w,(H-2*pad)/hh),cx=(t.x+p.x)/2,cy=(t.y+p.y)/2;
+  var tx=W/2+(t.x-cx)*s,ty=H/2-(t.y-cy)*s,px=W/2+(p.x-cx)*s,py=H/2-(p.y-cy)*s;
+  var dx=px-tx,dy=py-ty,len=Math.sqrt(dx*dx+dy*dy)||1,ux=dx/len,uy=dy/len;
+  var ex=px-ux*9,ey=py-uy*9,sx=tx+ux*8,sy=ty+uy*8;
+  var mx=(tx+px)/2-uy*-14,my=(ty+py)/2+ux*-14;
+  var d=haversine(h.tee,h.pin),bar=niceBar(s);
+  return '<svg class="map" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Hole '+h.n+' map">'+
+  '<defs><marker id="ah'+k+'" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--pin)"/></marker></defs>'+
+  '<line x1="'+sx.toFixed(1)+'" y1="'+sy.toFixed(1)+'" x2="'+ex.toFixed(1)+'" y2="'+ey.toFixed(1)+'" stroke="var(--pin)" stroke-width="2.5" marker-end="url(#ah'+k+')"/>'+
+  '<rect x="'+(tx-7).toFixed(1)+'" y="'+(ty-7).toFixed(1)+'" width="14" height="14" rx="3" fill="var(--tee)"/>'+
+  '<circle cx="'+px.toFixed(1)+'" cy="'+py.toFixed(1)+'" r="8" fill="var(--card)" stroke="var(--pin)" stroke-width="3"/>'+
+  '<text class="svgt svgh" x="'+tx.toFixed(1)+'" y="'+(ty+22).toFixed(1)+'" text-anchor="middle">Tee</text>'+
+  '<text class="svgt svgh" x="'+px.toFixed(1)+'" y="'+(py-14).toFixed(1)+'" text-anchor="middle">Pin</text>'+
+  '<text class="svgt svgh" x="'+mx.toFixed(1)+'" y="'+my.toFixed(1)+'" text-anchor="middle" style="font-size:13px">'+fd(d)+'</text>'+
+  northArrow(W)+
+  '<g transform="translate(14,'+(H-14)+')"><line x1="0" y1="0" x2="'+bar.px.toFixed(1)+'" y2="0" stroke="var(--text)" stroke-width="2"/><line x1="0" y1="-4" x2="0" y2="4" stroke="var(--text)" stroke-width="2"/><line x1="'+bar.px.toFixed(1)+'" y1="-4" x2="'+bar.px.toFixed(1)+'" y2="4" stroke="var(--text)" stroke-width="2"/><text class="svgt" x="'+(bar.px+6).toFixed(1)+'" y="4">'+bar.val+' '+units+'</text></g>'+
+  '</svg>';
+}
+function overviewSVG(list){
+  var all=[];
+  list.forEach(function(h){if(h.tee)all.push(h.tee);if(h.pin)all.push(h.pin)});
+  if(!all.length) return "";
+  var W=340,H=340,pad=34,pr=proj(all),i=0,minx=1e18,maxx=-1e18,miny=1e18,maxy=-1e18;
+  pr.forEach(function(q){minx=Math.min(minx,q.x);maxx=Math.max(maxx,q.x);miny=Math.min(miny,q.y);maxy=Math.max(maxy,q.y)});
+  var w=Math.max(maxx-minx,40),hh=Math.max(maxy-miny,40),s=Math.min((W-2*pad)/w,(H-2*pad)/hh),cx=(minx+maxx)/2,cy=(miny+maxy)/2;
+  function X(q){return W/2+(q.x-cx)*s}
+  function Y(q){return H/2-(q.y-cy)*s}
+  var body="",bar=niceBar(s);
+  list.forEach(function(h){
+    var t=h.tee?pr[i++]:null,p=h.pin?pr[i++]:null;
+    if(!t&&!p) return;
+    if(t&&p){
+      var dx=X(p)-X(t),dy=Y(p)-Y(t),len=Math.sqrt(dx*dx+dy*dy)||1,ux=dx/len,uy=dy/len;
+      var e2=len>14?9:0;
+      body+='<line x1="'+X(t).toFixed(1)+'" y1="'+Y(t).toFixed(1)+'" x2="'+(X(p)-ux*e2).toFixed(1)+'" y2="'+(Y(p)-uy*e2).toFixed(1)+'" stroke="var(--pin)" stroke-width="2" marker-end="url(#ahO)"/>';
+    }
+    if(t) body+='<rect x="'+(X(t)-4).toFixed(1)+'" y="'+(Y(t)-4).toFixed(1)+'" width="8" height="8" rx="2" fill="var(--tee)"/>';
+    if(p) body+='<circle cx="'+X(p).toFixed(1)+'" cy="'+Y(p).toFixed(1)+'" r="4.5" fill="var(--card)" stroke="var(--pin)" stroke-width="2"/>';
+    var lab=t||p;
+    body+='<text class="svgt svgh" x="'+(X(lab)+7).toFixed(1)+'" y="'+(Y(lab)-6).toFixed(1)+'">'+h.n+'</text>';
+  });
+  return '<svg class="map" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Course overview"><defs><marker id="ahO" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--pin)"/></marker></defs>'+body+northArrow(W)+
+  '<g transform="translate(14,'+(H-14)+')"><line x1="0" y1="0" x2="'+bar.px.toFixed(1)+'" y2="0" stroke="var(--text)" stroke-width="2"/><line x1="0" y1="-4" x2="0" y2="4" stroke="var(--text)" stroke-width="2"/><line x1="'+bar.px.toFixed(1)+'" y1="-4" x2="'+bar.px.toFixed(1)+'" y2="4" stroke="var(--text)" stroke-width="2"/><text class="svgt" x="'+(bar.px+6).toFixed(1)+'" y="4">'+bar.val+' '+units+'</text></g></svg>';
+}
+function renderBook(){
+  var b=$("bookInner");
+  if(!holes.length){b.innerHTML='<div class="card"><p class="muted" style="margin:0">Record some holes and the caddy book pages will appear here.</p></div>';return;}
+  var html='<div class="card"><h2>Course overview</h2>'+overviewSVG(holes)+'<p class="small muted" style="margin:8px 0 0">Blue squares are tees, orange circles are baskets. Numbers are holes. Top-down, north is up.</p></div>';
+  holes.forEach(function(h,k){
+    var s=stats(h);
+    if(!s) return;
+    html+='<div class="card"><div class="row between" style="margin-bottom:8px"><h2 style="margin:0">Hole '+h.n+(h.par!=null?' \u00b7 Par '+h.par:'')+'</h2><span class="small muted">Heading '+Math.round(s.b)+'\u00b0 '+compass(s.b)+'</span></div>'+holeSVG(h,k)+
+    '<div class="stat" style="margin-top:10px"><div><span class="small muted">Distance</span><b>'+fd(s.d)+'</b></div><div><span class="small muted">Elevation</span><b>'+(s.dz==null?"\u2014":fe(s.dz))+'</b></div></div>'+
+    (h.ob?'<p class="small" style="margin:10px 0 0"><b>OB:</b> '+esc(h.ob)+'</p>':'')+'</div>';
+  });
+  b.innerHTML=html;
+}
+
+/* ---------- export ---------- */
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+function ptName(h,kind){return "H"+h.n+" "+(kind==="tee"?"Tee":"Pin")}
+function slug(s){s=(s||"").trim();if(!s)return"disc-golf-course";return s.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"")||"disc-golf-course"}
+function buildGPX(){
+  var o='<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="Caddy Book Recorder" xmlns="http://www.topografix.com/GPX/1/1">\n';
+  o+='<metadata><name>'+(courseName?esc(courseName):"Disc Golf Course")+'</name></metadata>\n';
+  holes.forEach(function(h){
+    ["tee","pin"].forEach(function(k){
+      var p=h[k];if(!p)return;
+      var extra=(k==="pin")?[h.par!=null?"Par "+h.par:"",h.ob?"OB: "+h.ob:""].filter(Boolean).join(". "):"";
+      var desc="accuracy "+p.acc.toFixed(1)+" m, "+p.n+" fixes"+(extra?". "+extra:"");
+      o+='<wpt lat="'+p.lat.toFixed(7)+'" lon="'+p.lon.toFixed(7)+'">'+(p.alt!=null?'<ele>'+p.alt.toFixed(1)+'</ele>':'')+'<name>'+ptName(h,k)+'</name><desc>'+esc(desc)+'</desc></wpt>\n';
+    });
+  });
+  return o+'</gpx>\n';
+}
+function buildKML(){
+  var o='<?xml version="1.0" encoding="UTF-8"?>\n<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>'+(courseName?esc(courseName):"Disc Golf Course")+'</name>\n'+
+  '<Style id="l"><LineStyle><color>ff0f48d9</color><width>3</width></LineStyle></Style>\n';
+  holes.forEach(function(h){
+    ["tee","pin"].forEach(function(k){
+      var p=h[k];if(!p)return;
+      var extra=(k==="pin")?[h.par!=null?"Par "+h.par:"",h.ob?"OB: "+h.ob:""].filter(Boolean).join(". "):"";
+      o+='<Placemark><name>'+ptName(h,k)+'</name>'+(extra?'<description>'+esc(extra)+'</description>':'')+'<Point><coordinates>'+p.lon.toFixed(7)+','+p.lat.toFixed(7)+','+(p.alt!=null?p.alt.toFixed(1):0)+'</coordinates></Point></Placemark>\n';
+    });
+    if(h.tee&&h.pin){
+      o+='<Placemark><name>H'+h.n+' line</name><styleUrl>#l</styleUrl><LineString><tessellate>1</tessellate><coordinates>'+
+      h.tee.lon.toFixed(7)+','+h.tee.lat.toFixed(7)+','+(h.tee.alt!=null?h.tee.alt.toFixed(1):0)+' '+
+      h.pin.lon.toFixed(7)+','+h.pin.lat.toFixed(7)+','+(h.pin.alt!=null?h.pin.alt.toFixed(1):0)+
+      '</coordinates></LineString></Placemark>\n';
+    }
+  });
+  return o+'</Document></kml>\n';
+}
+function csvField(v){v=String(v==null?"":v);return '"'+v.replace(/"/g,'""')+'"'}
+function buildCSV(){
+  var rows=["course,hole,par,ob_rules,tee_lat,tee_lon,tee_alt_m,tee_acc_m,pin_lat,pin_lon,pin_alt_m,pin_acc_m,distance_m,distance_ft,elev_change_m,elev_change_ft,bearing_deg"];
+  function c(p,f,d){return p&&p[f]!=null?p[f].toFixed(d):""}
+  var cn=csvField(courseName);
+  holes.forEach(function(h){
+    var s=stats(h);
+    rows.push([cn,h.n,h.par!=null?h.par:"",csvField(h.ob||""),c(h.tee,"lat",7),c(h.tee,"lon",7),c(h.tee,"alt",1),c(h.tee,"acc",1),c(h.pin,"lat",7),c(h.pin,"lon",7),c(h.pin,"alt",1),c(h.pin,"acc",1),
+      s?s.d.toFixed(1):"",s?(s.d*FT).toFixed(0):"",s&&s.dz!=null?s.dz.toFixed(1):"",s&&s.dz!=null?(s.dz*FT).toFixed(0):"",s?s.b.toFixed(0):""].join(","));
+  });
+  return rows.join("\n")+"\n";
+}
+function showText(name,text){
+  $("ovTitle").textContent=name;$("ovText").value=text;$("overlay").classList.add("on");
+}
+function doExport(f){
+  if(!holes.length){toast("Nothing to export yet");return;}
+  var name,data,mime="text/plain";
+  if(f==="gpx"){name=slug(courseName)+".gpx";data=buildGPX();mime="application/gpx+xml";}
+  else if(f==="kml"){name=slug(courseName)+".kml";data=buildKML();mime="application/vnd.google-earth.kml+xml";}
+  else if(f==="csv"){name=slug(courseName)+".csv";data=buildCSV();mime="text/csv";}
+  else {name=slug(courseName)+"-backup.json";data=JSON.stringify({holes:holes,units:units,courseName:courseName},null,2);mime="application/json";}
+  try{
+    var blob=new Blob([data],{type:mime}),url=URL.createObjectURL(blob),a=document.createElement("a");
+    a.href=url;a.download=name;document.body.appendChild(a);a.click();
+    setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url)},1000);
+    toast("Saved "+name);
+  }catch(err){showText(name,data);}
+}
+
+/* ---------- server upload ---------- */
+function doUpload(){
+  if(!holes.length){toast("Nothing to upload yet");return;}
+  var btn=$("uploadBtn"),note=$("uploadNote");
+  var name=slug(courseName)+"-backup.json";
+  var data=JSON.stringify({holes:holes,units:units,courseName:courseName},null,2);
+  var url=UPLOAD_URL+"?name="+encodeURIComponent(name)+(UPLOAD_TOKEN?"&token="+encodeURIComponent(UPLOAD_TOKEN):"");
+  btn.disabled=true;btn.textContent="Uploading\u2026";
+  fetch(url,{
+    method:"POST",
+    headers:Object.assign({"Content-Type":"application/json"},UPLOAD_TOKEN?{"X-Auth-Token":UPLOAD_TOKEN}:{}),
+    body:data
+  }).then(function(r){
+    return r.text().then(function(t){
+      var j=null;try{j=JSON.parse(t)}catch(e){}
+      if(!r.ok||!j||!j.ok){
+        var msg=(j&&j.error)?j.error:("Server returned "+r.status);
+        throw new Error(msg);
+      }
+      return j;
+    });
+  }).then(function(j){
+    toast("Uploaded "+j.file+" to server");
+    note.textContent="Last upload: "+name+" \u2713 "+new Date().toLocaleTimeString();
+  }).catch(function(err){
+    toast("Upload failed");
+    note.textContent="Upload failed: "+err.message+". Check that save-backup.php is in this folder and reachable.";
+  }).finally(function(){
+    btn.disabled=false;btn.textContent="Upload backup to server";
+  });
+}
+
+/* ---------- views + events ---------- */
+function setView(v){
+  ["capture","holes","book","export"].forEach(function(x){
+    $("v-"+x).classList.toggle("on",x===v);
+  });
+  document.querySelectorAll("nav button").forEach(function(b){b.classList.toggle("on",b.dataset.v===v)});
+  if(v==="holes") renderHoles();
+  if(v==="book") renderBook();
+  if(v==="export") renderExport();
+  window.scrollTo(0,0);
+}
+function renderExport(){
+  $("u-ft").className=units==="ft"?"primary":"";
+  $("u-m").className=units==="m"?"primary":"";
+  var ci=$("courseNameInput");if(ci&&document.activeElement!==ci) ci.value=courseName;
+  renderCourseLabel();
+  $("dlNote").textContent="Files go to your phone's Downloads folder.";
+}
+function renderCourseLabel(){
+  var el=$("courseNameLabel");if(el) el.textContent=courseName?courseName:"";
+}
+function renderAll(){
+  $("holeBox").dataset.busy="";
+  renderCourseLabel();
+  renderGPS();renderHole();renderHoles();renderBook();renderExport();
+}
+var armedTimers={};
+function arm(btn,label,fn){
+  var key=btn.dataset.a+(btn.dataset.n||"");
+  if(armedTimers[key]){clearTimeout(armedTimers[key].t);var old=armedTimers[key].old;delete armedTimers[key];btn.textContent=old;fn();return;}
+  var oldTxt=btn.textContent;btn.textContent=label;
+  armedTimers[key]={old:oldTxt,t:setTimeout(function(){btn.textContent=oldTxt;delete armedTimers[key]},3000)};
+}
+document.addEventListener("click",function(e){
+  var b=e.target.closest("[data-a]");
+  if(!b) return;
+  var a=b.dataset.a;
+  if(a==="tab") setView(b.dataset.v);
+  else if(a==="prev"){if(cur>1){cur--;persist();renderHole();}}
+  else if(a==="next"){cur++;persist();renderHole();}
+  else if(a==="mark") beginCapture(b.dataset.k);
+  else if(a==="cancel") cancelCapture();
+  else if(a==="retry") startGPS();
+  else if(a==="go"){cur=+b.dataset.n;persist();setView("capture");renderHole();}
+  else if(a==="del"){
+    arm(b,"Tap again",function(){
+      var n=+b.dataset.n;
+      holes=holes.filter(function(h){return h.n!==n});
+      persist();renderAll();toast("Hole "+n+" deleted");
+    });
+  }
+  else if(a==="unit"){units=b.dataset.u;persist();renderAll();}
+  else if(a==="exp") doExport(b.dataset.f);
+  else if(a==="clearall"){
+    arm(b,"Tap again to delete everything",function(){
+      holes=[];cur=1;persist();renderAll();toast("All data deleted");
+    });
+  }
+});
+document.addEventListener("change",function(e){
+  if(e.target.id==="dur"){durSec=+e.target.value;persist();}
+  if(e.target.id==="parInput"){
+    var v=e.target.value===""?null:Math.max(1,Math.min(7,Math.round(+e.target.value)));
+    var h=getHole(cur,true);h.par=v;persist();renderHoles();
+  }
+  if(e.target.id==="obInput"){
+    var h2=getHole(cur,true);h2.ob=e.target.value.trim();persist();renderHoles();
+  }
+  if(e.target.id==="courseNameInput"){courseName=e.target.value.trim();persist();renderCourseLabel();}
+  if(e.target.id==="imp"){
+    var f=e.target.files&&e.target.files[0];
+    if(!f) return;
+    var r=new FileReader();
+    r.onload=function(){
+      try{
+        var o=JSON.parse(r.result);
+        if(!o||!Array.isArray(o.holes)) throw new Error("bad");
+        holes=o.holes;if(o.units)units=o.units;courseName=o.courseName||courseName;cur=holes.length?holes[holes.length-1].n+1:1;
+        persist();renderAll();toast("Backup restored");
+      }catch(err){toast("That file isn't a valid backup");}
+    };
+    r.readAsText(f);
+    e.target.value="";
+  }
+});
+$("ovClose").addEventListener("click",function(){$("overlay").classList.remove("on")});
+$("uploadBtn").addEventListener("click",doUpload);
+$("ovCopy").addEventListener("click",function(){
+  var t=$("ovText");t.focus();t.select();
+  try{
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(t.value).then(function(){toast("Copied")},function(){document.execCommand("copy");toast("Copied")});}
+    else{document.execCommand("copy");toast("Copied");}
+  }catch(err){toast("Select the text and copy manually");}
+});
+
+/* ---------- init ---------- */
+load();
+renderAll();
+startGPS();
+keepAwake();
+setInterval(function(){if(last&&!cap)renderGPS()},1000);
+})();
+</script>
+</body>
+</html>

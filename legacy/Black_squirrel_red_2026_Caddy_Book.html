@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f172a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>Black squirrel red 2026 Caddy Book</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root {
+  --navy: #0f172a; --panel: #1e293b; --line: #334155;
+  --cyan: #38bdf8; --amber: #fbbf24; --orange: #f97316; --pink: #ef476f;
+  --text: #f8fafc; --muted: #94a3b8; --green: #34d399; --yellow: #fde047;
+  --card-h: 0px;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; margin: 0; background: var(--navy); color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden; overscroll-behavior: none; }
+button { font: inherit; color: inherit; touch-action: manipulation; }
+
+#map { position: absolute; inset: 0; background: #e5e3df; }
+/* keep the OpenStreetMap credit visible above the info card */
+.leaflet-bottom { bottom: var(--card-h); }
+
+.top { position: absolute; z-index: 1000; top: 0; left: 0; right: 0;
+  padding: calc(env(safe-area-inset-top, 0px) + 8px) 0 8px;
+  background: rgba(15, 23, 42, .92); border-bottom: 1px solid var(--line); }
+.chips { display: flex; gap: 6px; overflow-x: auto; padding: 0 10px; scrollbar-width: none; }
+.chips::-webkit-scrollbar { display: none; }
+.chip { flex: 0 0 auto; min-width: 44px; height: 44px; padding: 0 12px; border-radius: 22px;
+  border: 1px solid var(--line); background: var(--panel); font-weight: 700; font-size: 16px; }
+.chip.on { background: var(--cyan); border-color: var(--cyan); color: var(--navy); }
+
+.compass { position: absolute; z-index: 1000; right: 12px;
+  top: calc(env(safe-area-inset-top, 0px) + 72px); width: 40px; height: 40px; pointer-events: none; }
+.compass svg { display: block; transition: transform .25s ease; }
+.card { position: absolute; z-index: 1000; left: 0; right: 0; bottom: 0;
+  padding: 12px 14px calc(env(safe-area-inset-bottom, 0px) + 12px);
+  background: rgba(15, 23, 42, .96); border-top: 2px solid var(--cyan);
+  border-radius: 18px 18px 0 0; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; text-align: center; }
+.stat b { display: block; font-size: 28px; line-height: 1.1; font-weight: 800; }
+.stat span { font-size: 13px; color: var(--muted); }
+.stat.par b { color: var(--yellow); }
+.stat.dist b { color: var(--green); }
+.ob { margin: 10px 0 0; padding: 9px 12px; background: var(--panel); border-left: 4px solid var(--pink);
+  border-radius: 8px; font-size: 15px; line-height: 1.35; font-weight: 600; }
+.ob:empty { display: none; }
+.hint { margin: 10px 0 0; font-size: 14px; color: var(--muted); text-align: center; }
+.nav { display: flex; gap: 10px; margin-top: 12px; }
+.nav button { flex: 1; height: 48px; border-radius: 12px; border: 1px solid var(--line);
+  background: var(--panel); font-weight: 700; font-size: 16px; }
+.nav button:disabled { opacity: .35; }
+.nav button.next { background: var(--cyan); border-color: var(--cyan); color: var(--navy); }
+.nav button.next:disabled { background: var(--panel); color: var(--text); border-color: var(--line); }
+
+/* map markers */
+.pt { position: relative; width: 0; height: 0; }
+.pt i { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); display: block;
+  border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.55); }
+.pt b { position: absolute; left: 0; top: 15px; transform: translateX(-50%); white-space: nowrap;
+  font: 700 12px/1 system-ui, sans-serif; color: #fff; background: rgba(15,23,42,.85);
+  padding: 4px 7px; border-radius: 7px; }
+.pt.tee i { width: 20px; height: 20px; background: var(--orange); border-radius: 4px; }
+.pt.pin i { width: 22px; height: 22px; background: var(--pink); border-radius: 50%; }
+.pt.pin b { top: -36px; }
+.pt.wp i { width: 12px; height: 12px; background: var(--amber); border-radius: 50%; }
+.pt.num i { width: 30px; height: 30px; border-radius: 50%; background: var(--c); display: flex;
+  align-items: center; justify-content: center; font: 800 14px/1 system-ui, sans-serif; color: #fff;
+  text-shadow: 0 1px 2px rgba(0,0,0,.6); }
+.pt.dot i { width: 10px; height: 10px; background: var(--c); border-radius: 2px; border-width: 1.5px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div class="top"><div class="chips" id="chips" role="tablist" aria-label="Holes"></div></div>
+<div class="compass" id="compass" aria-label="North">
+  <svg viewBox="0 0 40 40" width="40" height="40"><circle cx="20" cy="20" r="19" fill="#0f172a" fill-opacity=".88" stroke="#38bdf8" stroke-width="1.5"/>
+  <path d="M20 5 L26 22 L20 18.5 L14 22 Z" fill="#38bdf8" stroke="#fff" stroke-width="1"/>
+  <text x="20" y="34" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="800" fill="#fff">N</text></svg>
+</div>
+<div class="card" id="card">
+  <div class="stats" id="stats"></div>
+  <p class="ob" id="ob"></p>
+  <p class="hint" id="hint"></p>
+  <div class="nav">
+    <button id="prev" type="button">Previous</button>
+    <button id="next" type="button" class="next">Next</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate.js"></script>
+<script>
+const D = {"course": "Black squirrel red 2026", "units": "ft", "totalPar": 62, "totalDist": 7162, "holes": [{"n": 1, "par": 4, "dist": 660, "ob": "OB: On the water. Sand is hazard", "bearing": 288.82, "path": [[41.5741497, -85.8545722], [41.5743794, -85.8559039], [41.5747335, -85.8568617]]}, {"n": 2, "par": 3, "dist": 234, "ob": "OB: Private property", "bearing": 289.39, "path": [[41.5747736, -85.8571944], [41.5749868, -85.8580041]]}, {"n": 3, "par": 3, "dist": 243, "ob": "OB: Private property", "bearing": 345.06, "path": [[41.5752537, -85.8572962], [41.5758965, -85.8575254]]}, {"n": 4, "par": 5, "dist": 650, "ob": "OB: Private property", "bearing": 306.65, "path": [[41.5759165, -85.8572757], [41.5767912, -85.857591], [41.5769999, -85.8587095], [41.5769797, -85.8591857]]}, {"n": 5, "par": 3, "dist": 232, "ob": "OB: Private property", "bearing": 193.28, "path": [[41.5760663, -85.860124], [41.5754473, -85.8603192]]}, {"n": 6, "par": 3, "dist": 289, "ob": "OB: Sand is hazard", "bearing": 228.3, "path": [[41.57526, -85.8602328], [41.5747336, -85.8610224]]}, {"n": 7, "par": 4, "dist": 495, "ob": "OB: Golf green", "bearing": 260.51, "path": [[41.5742616, -85.8608216], [41.5740463, -85.862132], [41.5740377, -85.8626121]]}, {"n": 8, "par": 3, "dist": 383, "ob": "OB: Golf green", "bearing": 337.62, "path": [[41.5744819, -85.8637744], [41.5754518, -85.8643083]]}, {"n": 9, "par": 4, "dist": 668, "ob": "OB: Private property past the center of the tree line", "bearing": 351.66, "path": [[41.5762075, -85.8642375], [41.5780192, -85.8645925]]}, {"n": 10, "par": 3, "dist": 270, "ob": "OB: Golf green, water, private property", "bearing": 346.28, "path": [[41.5784328, -85.8643823], [41.5791066, -85.8645004], [41.5791526, -85.8646173]]}, {"n": 11, "par": 4, "dist": 567, "ob": "OB: Standard course OB rules apply.", "bearing": 177.85, "path": [[41.5784438, -85.8638051], [41.5768911, -85.8637272]]}, {"n": 12, "par": 3, "dist": 177, "ob": "OB: Path and Island. Mandatory right of marked tree", "bearing": 187.4, "path": [[41.5759544, -85.864356], [41.5757257, -85.8644924], [41.5754729, -85.8644396]]}, {"n": 13, "par": 3, "dist": 304, "ob": "OB: Golf green. Sand is hazard", "bearing": 137.69, "path": [[41.5747149, -85.8646101], [41.5740985, -85.8638602]]}, {"n": 14, "par": 3, "dist": 307, "ob": "OB: On or over the road", "bearing": 107.76, "path": [[41.5737465, -85.864225], [41.5734895, -85.8631526]]}, {"n": 15, "par": 3, "dist": 312, "ob": "OB: On or over the road?", "bearing": 89.33, "path": [[41.5735094, -85.8625666], [41.5735727, -85.8614346], [41.5735193, -85.861425]]}, {"n": 16, "par": 3, "dist": 308, "ob": "OB: Golf green, on or over either road. Sand is hazard", "bearing": 118.75, "path": [[41.5739872, -85.8612408], [41.5735811, -85.8602513]]}, {"n": 17, "par": 4, "dist": 514, "ob": "OB: On or over the road", "bearing": 74.86, "path": [[41.573732, -85.8595677], [41.5740122, -85.8577842], [41.5741, -85.8577498]]}, {"n": 18, "par": 4, "dist": 549, "ob": "OB: In the water, golf green, on or over the road", "bearing": 91.01, "path": [[41.573595, -85.8565794], [41.5735685, -85.8545666]]}]};
+const COLORS = ["#ef476f", "#f78c6c", "#ffd166", "#06d6a0", "#118ab2", "#38bdf8", "#8338ec", "#ea580c", "#ec4899", "#84cc16", "#a855f7", "#06b6d4", "#f43f5e", "#eab308", "#10b981", "#6366f1", "#d946ef", "#f97316"];
+
+const map = L.map('map', { zoomControl: false, maxZoom: 20, zoomSnap: 0.25,
+  rotate: true, bearing: 0, touchRotate: false, rotateControl: false });
+const CAN_ROTATE = typeof map.setBearing === 'function' && L.Browser.any3d;
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxNativeZoom: 19, maxZoom: 20,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+}).addTo(map);
+map.attributionControl.setPrefix(false);
+const layer = L.layerGroup().addTo(map);
+
+const $ = id => document.getElementById(id);
+let cur = 0;   // 0 = course overview, 1..N = hole number
+
+function icon(cls, label, extra) {
+  return L.divIcon({ className: 'pt ' + cls, iconSize: [0, 0],
+    html: '<i' + (extra || '') + '></i>' + (label ? '<b>' + label + '</b>' : '') });
+}
+
+function pathMidpoint(path) {
+  const pts = path.map(p => L.latLng(p[0], p[1]));
+  const seg = [];
+  let total = 0;
+  for (let i = 0; i < pts.length - 1; i++) { const d = pts[i].distanceTo(pts[i + 1]); seg.push(d); total += d; }
+  let run = 0;
+  for (let i = 0; i < seg.length; i++) {
+    if (run + seg[i] >= total / 2 && seg[i] > 0) {
+      const f = (total / 2 - run) / seg[i];
+      return [pts[i].lat + f * (pts[i + 1].lat - pts[i].lat), pts[i].lng + f * (pts[i + 1].lng - pts[i].lng)];
+    }
+    run += seg[i];
+  }
+  return path[0];
+}
+
+function stat(cls, value, label) {
+  return '<div class="stat ' + cls + '"><b>' + value + '</b><span>' + label + '</span></div>';
+}
+
+function drawOverview() {
+  const all = [];
+  D.holes.forEach(h => {
+    const c = COLORS[(h.n - 1) % COLORS.length];
+    L.polyline(h.path, { color: '#fff', weight: 7, opacity: .7, interactive: false }).addTo(layer);
+    L.polyline(h.path, { color: c, weight: 4, opacity: 1, interactive: false }).addTo(layer);
+    L.marker(h.path[0], { icon: icon('dot', '', ' style="--c:' + c + '"'), interactive: false }).addTo(layer);
+    L.marker(pathMidpoint(h.path), {
+      icon: L.divIcon({ className: 'pt num', iconSize: [0, 0],
+        html: '<i style="--c:' + c + '">' + h.n + '</i>' }),
+      keyboard: false, title: 'Hole ' + h.n
+    }).on('click', () => go(h.n)).addTo(layer);
+    h.path.forEach(p => all.push(p));
+  });
+  $('stats').innerHTML = stat('', D.holes.length, 'Holes') + stat('par', D.totalPar, 'Par') +
+    stat('dist', D.totalDist.toLocaleString() + ' ' + D.units, 'Total');
+  $('ob').textContent = '';
+  $('hint').textContent = 'Tap a hole number to open it.';
+  return all;
+}
+
+function drawHole(h) {
+  L.polyline(h.path, { color: '#fff', weight: 8, opacity: .75, interactive: false }).addTo(layer);
+  L.polyline(h.path, { color: '#d97706', weight: 4, dashArray: '9 8', opacity: 1, interactive: false }).addTo(layer);
+  h.path.slice(1, -1).forEach(p => L.marker(p, { icon: icon('wp'), interactive: false }).addTo(layer));
+  L.marker(h.path[0], { icon: icon('tee', 'Tee'), interactive: false }).addTo(layer);
+  L.marker(h.path[h.path.length - 1], { icon: icon('pin', 'Pin'), interactive: false }).addTo(layer);
+  $('stats').innerHTML = stat('', 'Hole ' + h.n, '&nbsp;') + stat('par', h.par, 'Par') +
+    stat('dist', h.dist.toLocaleString() + ' ' + D.units, 'Tee to pin');
+  $('ob').textContent = h.ob;
+  $('hint').textContent = '';
+  return h.path;
+}
+
+function render() {
+  layer.clearLayers();
+  document.querySelectorAll('.chip').forEach((el, i) => {
+    el.classList.toggle('on', i === cur);
+    el.setAttribute('aria-selected', i === cur);
+  });
+  const pts = cur === 0 ? drawOverview() : drawHole(D.holes[cur - 1]);
+  const bearing = cur === 0 ? null : D.holes[cur - 1].bearing;
+  $('compass').firstElementChild.style.transform = 'rotate(' + (bearing === null || !CAN_ROTATE ? 0 : -bearing) + 'deg)';
+  $('prev').disabled = cur === 0;
+  $('next').disabled = cur === D.holes.length;
+  document.documentElement.style.setProperty('--card-h', $('card').offsetHeight + 'px');
+  fit(pts, bearing);
+  const on = document.querySelector('.chip.on');
+  if (on) on.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  history.replaceState(null, '', '#' + cur);
+}
+
+function fit(pts, bearing) {
+  map.invalidateSize();
+  const size = map.getSize();
+  const side = 24;
+  const top = $('chips').parentElement.offsetHeight + 28;
+  const bottom = $('card').offsetHeight + 36;
+
+  // Overview (or no rotation support): north-up, fit the bounding box.
+  if (bearing === null || !CAN_ROTATE) {
+    if (CAN_ROTATE) map.setBearing(0);
+    map.fitBounds(L.latLngBounds(pts), { paddingTopLeft: [side, top], paddingBottomRight: [side, bottom],
+      maxZoom: 20, animate: false });
+    return;
+  }
+
+  // Hole view: rotate the map so tee -> pin points straight up (tee at the bottom,
+  // pin at the top), then pick the zoom/center that fits the whole tee-waypoints-pin path.
+  map.setBearing(-bearing);
+  const rad = bearing * Math.PI / 180, c = Math.cos(rad), s = Math.sin(rad);
+  const P = pts.map(p => map.project(L.latLng(p[0], p[1]), 0));   // world pixels at zoom 0
+  const o = P[0];
+  const R = P.map(p => { const dx = p.x - o.x, dy = p.y - o.y; return [dx * c + dy * s, -dx * s + dy * c]; });
+  const minX = Math.min(...R.map(r => r[0])), maxX = Math.max(...R.map(r => r[0]));
+  const minY = Math.min(...R.map(r => r[1])), maxY = Math.max(...R.map(r => r[1]));
+  const availW = Math.max(50, size.x - 2 * side), availH = Math.max(50, size.y - top - bottom);
+  const scale = Math.min(availW / Math.max(maxX - minX, 1e-9), availH / Math.max(maxY - minY, 1e-9));
+  let z = Math.floor(Math.log2(scale) * 4) / 4;           // snap down to a quarter zoom level
+  z = Math.min(20, z);
+  const k = Math.pow(2, z);
+  // Put the middle of the path in the middle of the free area (between the chip bar and the card).
+  const rcx = (minX + maxX) / 2, rcy = (minY + maxY) / 2 - (top + availH / 2 - size.y / 2) / k;
+  const dx = rcx * c - rcy * s, dy = rcx * s + rcy * c;      // back to unrotated world pixels
+  map.setView(map.unproject(L.point(o.x + dx, o.y + dy), 0), z, { animate: false });
+}
+
+function go(n) { cur = Math.max(0, Math.min(D.holes.length, n)); render(); }
+
+(function init() {
+  const chips = $('chips');
+  ['All'].concat(D.holes.map(h => String(h.n))).forEach((label, i) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip'; b.textContent = label;
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-label', i === 0 ? 'Course overview' : 'Hole ' + label);
+    b.addEventListener('click', () => go(i));
+    chips.appendChild(b);
+  });
+  $('prev').addEventListener('click', () => go(cur - 1));
+  $('next').addEventListener('click', () => go(cur + 1));
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft') go(cur - 1);
+    if (e.key === 'ArrowRight') go(cur + 1);
+  });
+  window.addEventListener('resize', () => go(cur));
+  const start = parseInt((location.hash || '').slice(1), 10);
+  cur = isNaN(start) ? 0 : Math.max(0, Math.min(D.holes.length, start));
+  map.setView(D.holes[0].path[0], 17, { animate: false });
+  render();
+})();
+</script>
+</body>
+</html>
