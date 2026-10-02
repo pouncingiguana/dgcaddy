@@ -36,7 +36,7 @@ label{display:block;margin:8px 0 3px}
 </head>
 <body>
 <div id="side">
-  <h1>Caddy Editor</h1>
+  <div class="row between"><h1>Caddy Editor</h1><a class="small" href="courses.html" style="color:var(--accent)">All courses</a></div>
   <div class="card">
     <label class="small muted" for="file" style="margin-top:0">Course JSON</label>
     <input type="file" id="file" accept=".json,application/json">
@@ -346,6 +346,15 @@ $("srvList").addEventListener("click",function(e){
     $("srvList").innerHTML="";
   });
 });
+/* opened from the courses page: editor.html#course=<id> */
+(function(){
+  var m=/^#course=([0-9a-f-]{36})$/i.exec(location.hash);
+  if(!m)return;
+  api("get&id="+m[1]).then(function(j){
+    if(j._status!==200||!j.data){$("course").textContent=j.error||"Could not open that course.";return;}
+    loadCourse(j.data,(j.name||"course")+".json",{id:j.id,rev:j.rev,status:j.status,links:j.links,msg:j.build_msg});
+  });
+})();
 $("sat").addEventListener("click",function(){setBase("sat")});
 $("osm").addEventListener("click",function(){setBase("osm")});
 window.addEventListener("beforeunload",function(e){if(dirty){e.preventDefault();e.returnValue=""}});

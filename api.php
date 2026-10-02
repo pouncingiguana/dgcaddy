@@ -46,8 +46,21 @@ function book_links($row) {
 switch ($a) {
 
 case 'list':
-    $rows = $db->query("SELECT id,name,rev,status,updated_at,built_at FROM courses ORDER BY updated_at DESC")->fetchAll();
-    out(200, ['courses' => $rows]);
+    $rows = $db->query("SELECT id,public_id,name,data,rev,status,build_msg,updated_at,built_at FROM courses ORDER BY updated_at DESC")->fetchAll();
+    $list = [];
+    foreach ($rows as $r) {
+        $d = json_decode($r['data'], true);
+        $base = 'books/' . $r['public_id'] . '/';
+        $list[] = [
+            'id' => $r['id'], 'name' => $r['name'], 'rev' => (int)$r['rev'], 'status' => $r['status'],
+            'build_msg' => $r['build_msg'], 'updated_at' => $r['updated_at'], 'built_at' => $r['built_at'],
+            'holes' => is_array($d['holes'] ?? null) ? count($d['holes']) : 0,
+            // Files from the last successful build. They stay on disk after later edits, so
+            // 'status' tells the page whether they are current (built) or out of date.
+            'links' => $r['built_at'] ? ['print' => $base . 'print.pdf', 'phone' => $base . 'phone.pdf', 'web' => $base . 'index.html'] : null,
+        ];
+    }
+    out(200, ['courses' => $list]);
 
 case 'get':
     $s = $db->prepare("SELECT * FROM courses WHERE id=?");
