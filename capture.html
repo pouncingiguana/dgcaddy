@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f7a4d">
+<title>Caddy Capture</title>
+<style>
+:root{
+  --bg:#f3f5f1;--card:#fff;--text:#18211b;--muted:#647268;--accent:#1f7a4d;--accent-text:#fff;
+  --line:#d8dfd9;--good:#1f8a4c;--warn:#b7791f;--bad:#c0392b;--tee:#2b6cb0;--pin:#d9480f;--wp:#b7791f;--soft:#e9efe9;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#101410;--card:#1a211b;--text:#e8eee9;--muted:#93a297;--accent:#3fae77;--accent-text:#08140d;
+  --line:#2d372f;--good:#4cc27d;--warn:#e0a63c;--bad:#ef6a5b;--tee:#4b8fd6;--pin:#e8672a;--wp:#c98a1f;--soft:#232c25}}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;padding-top:env(safe-area-inset-top,0px);background:var(--bg);color:var(--text);
+  font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent}
+main{max-width:640px;margin:0 auto;padding:14px 14px 100px}
+h1{font-size:18px;margin:0 0 4px}h2{font-size:15px;margin:0 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.muted{color:var(--muted)}.small{font-size:13px}
+.row{display:flex;gap:10px;align-items:center}.between{justify-content:space-between}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button{font:inherit;color:var(--text);background:var(--soft);border:1px solid var(--line);border-radius:12px;padding:12px 14px;cursor:pointer;touch-action:manipulation}
+button:active{transform:scale(.98)}button:disabled{opacity:.45}
+button.primary{background:var(--accent);color:var(--accent-text);border-color:transparent;font-weight:700}
+button.tee,button.pin,button.wp{color:#fff;border-color:transparent;font-weight:700}
+button.tee{background:var(--tee)}button.pin{background:var(--pin)}button.wp{background:var(--wp)}
+button.mark{padding:18px 4px;font-size:16px;width:100%}
+input,select,textarea{font:inherit;color:var(--text);background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:9px;width:100%}
+select{width:auto;padding:6px 8px}
+label{display:block;margin-bottom:4px}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;background:var(--muted);margin-right:6px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-variant-numeric:tabular-nums}
+.holenum{font-size:30px;font-weight:800;text-align:center;line-height:1.1}
+.bar{height:10px;background:var(--soft);border-radius:6px;overflow:hidden;margin:10px 0 4px}
+.bar>i{display:block;height:100%;width:0;background:var(--accent)}
+.stat{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px}.stat b{font-size:22px;display:block}
+.item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-top:1px solid var(--line)}
+.item .info{flex:1;min-width:0;font-variant-numeric:tabular-nums}
+.item button{padding:8px 10px;font-size:13px}
+.item .n{font-weight:800;width:38px}
+nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom,0px);z-index:5}
+nav button{flex:1;border:0;border-radius:0;background:transparent;padding:14px 4px;color:var(--muted);font-size:14px}
+nav button.on{color:var(--accent);font-weight:700}
+.view{display:none}.view.on{display:block}
+#toast{position:fixed;left:50%;bottom:calc(72px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:20px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:9;max-width:90%;text-align:center}
+#toast.on{opacity:1}
+.errbox{border-left:4px solid var(--bad);padding-left:10px}
+.warnbox{border-left:4px solid var(--warn);padding-left:10px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Caddy Capture</h1>
+  <div class="small muted" id="courseLabel" style="margin-bottom:12px"></div>
+
+  <section id="v-capture" class="view on">
+    <div class="card" id="gpsBox"></div>
+    <div class="card" id="holeBox"></div>
+    <div class="card" id="capBox" style="display:none"></div>
+  </section>
+
+  <section id="v-holes" class="view"><div class="card" id="holesBox"></div></section>
+
+  <section id="v-data" class="view">
+    <div class="card">
+      <h2>Course name</h2>
+      <input type="text" id="courseInput" placeholder="e.g. Black Squirrel Red 2026">
+    </div>
+    <div class="card">
+      <h2>Units</h2>
+      <div class="grid2"><button data-a="unit" data-u="ft" id="u-ft">Feet</button><button data-a="unit" data-u="m" id="u-m">Meters</button></div>
+    </div>
+    <div class="card">
+      <h2>Course file (JSON)</h2>
+      <button class="primary" data-a="export" style="width:100%">Download JSON</button>
+      <p class="small muted" id="exportNote" style="margin:8px 0 12px"></p>
+      <label class="small muted" for="imp">Restore from a JSON file (replaces everything on this device)</label>
+      <input type="file" id="imp" accept=".json,application/json">
+    </div>
+    <div class="card warnbox">
+      <h2>About elevation</h2>
+      <p class="small muted" style="margin:0">Phones report GPS altitude, not barometric, so elevation change is often off by 5&ndash;15 m. Longer averaging helps.</p>
+    </div>
+    <div class="card"><button data-a="clearall" style="width:100%;color:var(--bad)">Delete all recorded data</button></div>
+  </section>
+</main>
+
+<nav>
+  <button data-a="tab" data-v="capture" class="on">Capture</button>
+  <button data-a="tab" data-v="holes">Holes</button>
+  <button data-a="tab" data-v="data">Data</button>
+</nav>
+<div id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+var R=6371008.8,FT=3.28084,KEY="caddy:v2",OLD_KEY="dgcaddy:v1";
+var holes=[],cur=1,units="ft",durSec=10,courseName="";
+var last=null,cap=null,gpsErr=null,watchId=null,wake=null;
+
+function $(id){return document.getElementById(id)}
+function rad(d){return d*Math.PI/180}
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+
+/* ---------- storage ---------- */
+function load(){
+  try{
+    var s=localStorage.getItem(KEY)||localStorage.getItem(OLD_KEY);
+    if(s){var o=JSON.parse(s);holes=o.holes||[];cur=o.cur||1;units=o.units||"ft";durSec=o.durSec||10;courseName=o.courseName||"";}
+  }catch(e){}
+  holes.forEach(function(h){if(!Array.isArray(h.waypoints))h.waypoints=[]});
+}
+function persist(){
+  try{localStorage.setItem(KEY,JSON.stringify({holes:holes,cur:cur,units:units,durSec:durSec,courseName:courseName}));}catch(e){}
+}
+function getHole(n,create){
+  for(var i=0;i<holes.length;i++)if(holes[i].n===n)return holes[i];
+  if(!create)return null;
+  var h={n:n,tee:null,pin:null,waypoints:[]};
+  holes.push(h);holes.sort(function(a,b){return a.n-b.n});
+  return h;
+}
+
+/* ---------- math + format ---------- */
+function dist(a,b){
+  var dp=rad(b.lat-a.lat),dl=rad(b.lon-a.lon);
+  var x=Math.sin(dp/2)*Math.sin(dp/2)+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dl/2)*Math.sin(dl/2);
+  return 2*R*Math.asin(Math.min(1,Math.sqrt(x)));
+}
+function bearing(a,b){
+  var p1=rad(a.lat),p2=rad(b.lat),d=rad(b.lon-a.lon);
+  var y=Math.sin(d)*Math.cos(p2),x=Math.cos(p1)*Math.sin(p2)-Math.sin(p1)*Math.cos(p2)*Math.cos(d);
+  return (Math.atan2(y,x)*180/Math.PI+360)%360;
+}
+var DIRS=["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+function compass(b){return DIRS[Math.round(b/22.5)%16]}
+function fd(m){return units==="ft"?Math.round(m*FT)+" ft":Math.round(m)+" m"}
+function fe(m){
+  var r=Math.round(units==="ft"?m*FT:m);
+  return (r>0?"+":r<0?"\u2212":"")+Math.abs(r)+(units==="ft"?" ft":" m");
+}
+function stats(h){
+  if(!h||!h.tee||!h.pin)return null;
+  var s={d:dist(h.tee,h.pin),b:bearing(h.tee,h.pin),dz:null};
+  if(h.tee.alt!=null&&h.pin.alt!=null)s.dz=h.pin.alt-h.tee.alt;
+  return s;
+}
+function pathLen(h){
+  var pts=[h.tee].concat(h.waypoints,[h.pin]),t=0;
+  for(var i=0;i<pts.length-1;i++)t+=dist(pts[i],pts[i+1]);
+  return t;
+}
+
+/* ---------- toast ---------- */
+var toastT=null;
+function toast(msg){
+  var t=$("toast");t.textContent=msg;t.classList.add("on");
+  clearTimeout(toastT);toastT=setTimeout(function(){t.classList.remove("on")},2200);
+}
+
+/* ---------- GPS ---------- */
+function startGPS(){
+  gpsErr=null;
+  if(!("geolocation" in navigator)){gpsErr="This browser has no geolocation support.";renderGPS();return;}
+  if(watchId!=null){try{navigator.geolocation.clearWatch(watchId)}catch(e){}}
+  watchId=navigator.geolocation.watchPosition(onPos,onErr,{enableHighAccuracy:true,maximumAge:0,timeout:20000});
+  renderGPS();
+}
+function onPos(p){
+  var c=p.coords;gpsErr=null;
+  last={lat:c.latitude,lon:c.longitude,alt:(c.altitude==null||!isFinite(c.altitude))?null:c.altitude,acc:c.accuracy,altAcc:c.altitudeAccuracy,t:Date.now(),ts:p.timestamp};
+  renderGPS();
+  if(cap){
+    var prev=cap.samples[cap.samples.length-1];
+    if(!prev||prev.ts!==last.ts)cap.samples.push(last);
+    renderCap();
+  }
+}
+function onErr(e){
+  gpsErr=e.code===1?"Location permission was denied. Allow location for this site in your browser settings, then tap Retry."
+    :e.code===2?"Position unavailable. Check that location is on and you have a view of the sky."
+    :e.code===3?"GPS timed out. Move into the open and tap Retry.":(e.message||"GPS error.");
+  renderGPS();
+}
+function keepAwake(){
+  try{
+    if(navigator.wakeLock&&!wake)navigator.wakeLock.request("screen").then(function(w){wake=w;w.addEventListener("release",function(){wake=null})}).catch(function(){});
+  }catch(e){}
+}
+document.addEventListener("visibilitychange",function(){if(document.visibilityState==="visible")keepAwake()});
+
+/* ---------- capture ---------- */
+function avgPoint(ss){
+  var minAcc=Infinity;
+  ss.forEach(function(s){if(s.acc<minAcc)minAcc=s.acc});
+  var keep=ss.filter(function(s){return s.acc<=2*minAcc+1});
+  var sw=0,lat=0,lon=0,aw=0,alt=0,accS=0,altAccS=0,ac=0;
+  keep.forEach(function(s){
+    var a=Math.max(s.acc||10,1),w=1/(a*a);
+    sw+=w;lat+=s.lat*w;lon+=s.lon*w;accS+=a;
+    if(s.alt!=null){
+      var av=Math.max(s.altAcc||a*1.5,1),wa=1/(av*av);
+      aw+=wa;alt+=s.alt*wa;altAccS+=av;ac++;
+    }
+  });
+  return {lat:lat/sw,lon:lon/sw,alt:aw?alt/aw:null,acc:accS/keep.length,altAcc:ac?altAccS/ac:null,n:keep.length,t:Date.now()};
+}
+function beginCapture(kind){
+  if(cap)return;
+  if(!last){toast("Waiting for a GPS fix\u2026");return;}
+  var seed=(Date.now()-last.t<3000)?[last]:[];
+  cap={kind:kind,hole:cur,start:Date.now(),dur:durSec*1000,samples:seed};
+  cap.timer=setInterval(function(){if(Date.now()-cap.start>=cap.dur)finishCapture();else renderCap()},200);
+  if(navigator.vibrate){try{navigator.vibrate(30)}catch(e){}}
+  renderCap();
+}
+function cancelCapture(){
+  if(!cap)return;
+  clearInterval(cap.timer);cap=null;renderCap();toast("Cancelled");
+}
+function finishCapture(){
+  clearInterval(cap.timer);
+  var c=cap;cap=null;
+  if(!c.samples.length){renderCap();toast("No GPS samples received. Try again.");return;}
+  var pt=avgPoint(c.samples),h=getHole(c.hole,true),label;
+  if(c.kind==="wp"){
+    h.waypoints.push({lat:pt.lat,lon:pt.lon,acc:pt.acc,n:pt.n});
+    label="waypoint "+h.waypoints.length;
+  }else{
+    h[c.kind]=pt;label=c.kind;
+    if(c.kind==="pin")cur=c.hole+1;
+  }
+  persist();
+  if(navigator.vibrate){try{navigator.vibrate([40,60,40])}catch(e){}}
+  toast("H"+c.hole+" "+label+" saved (\u00b1"+Math.round(pt.acc)+" m, "+pt.n+" fixes)");
+  renderCap();renderAll();
+}
+
+/* ---------- render: capture ---------- */
+function accColor(a){return a<=5?"var(--good)":a<=12?"var(--warn)":"var(--bad)"}
+function renderGPS(){
+  var b=$("gpsBox"),html;
+  if(gpsErr){
+    html='<div class="errbox"><b>GPS problem</b><p class="small" style="margin:6px 0 10px">'+esc(gpsErr)+'</p><button data-a="retry">Retry</button></div>';
+  }else if(!last){
+    html='<div class="row"><span class="dot"></span><b>Waiting for GPS fix\u2026</b></div><p class="small muted" style="margin:6px 0 0">Allow location when asked. Stand in the open for a few seconds.</p>';
+  }else{
+    var age=Math.round((Date.now()-last.t)/1000);
+    var acc=units==="ft"?Math.round(last.acc*FT)+" ft":last.acc.toFixed(1)+" m";
+    html='<div class="row between"><div class="row"><span class="dot" style="background:'+accColor(last.acc)+'"></span><b>\u00b1'+acc+'</b></div><span class="small muted">'+(age<2?"live":age+"s ago")+'</span></div>'+
+    '<div class="kv small" style="margin-top:8px"><span>Lat</span><span>'+last.lat.toFixed(6)+'</span><span>Lon</span><span>'+last.lon.toFixed(6)+'</span></div>';
+  }
+  b.innerHTML=html;
+}
+function renderHole(){
+  var h=getHole(cur,false),s=stats(h),busy=!!cap,wps=h?h.waypoints:[];
+  var tTxt=h&&h.tee?"\u2713 \u00b1"+Math.round(h.tee.acc)+" m":"not marked";
+  var pTxt=h&&h.pin?"\u2713 \u00b1"+Math.round(h.pin.acc)+" m":"not marked";
+  var d=busy?" disabled":"";
+  var html='<div class="row between"><button data-a="prev"'+(cur<=1||busy?" disabled":"")+' aria-label="Previous hole">\u2039</button>'+
+  '<div><div class="small muted" style="text-align:center">Hole</div><div class="holenum">'+cur+'</div></div>'+
+  '<button data-a="next"'+d+' aria-label="Next hole">\u203a</button></div>'+
+  '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px">'+
+  '<div><button class="tee mark" data-a="mark" data-k="tee"'+d+'>Tee</button><div class="small muted" style="text-align:center;margin-top:4px">'+tTxt+'</div></div>'+
+  '<div><button class="wp mark" data-a="mark" data-k="wp"'+d+'>Waypoint</button><div class="small muted" style="text-align:center;margin-top:4px">'+wps.length+' added</div></div>'+
+  '<div><button class="pin mark" data-a="mark" data-k="pin"'+d+'>Pin</button><div class="small muted" style="text-align:center;margin-top:4px">'+pTxt+'</div></div></div>'+
+  '<div class="row between" style="margin-top:12px"><span class="small muted">Averaging time</span><select id="dur">'+
+  [5,10,20,30].map(function(v){return '<option value="'+v+'"'+(v===durSec?" selected":"")+'>'+v+' s</option>'}).join("")+'</select></div>';
+  if(wps.length){
+    html+='<div style="margin-top:12px"><div class="small muted" style="margin-bottom:4px">Waypoints, in flight order from the tee</div>';
+    wps.forEach(function(w,i){
+      html+='<div class="item"><div class="info">Waypoint '+(i+1)+' <span class="small muted">\u00b1'+Math.round(w.acc||0)+' m</span></div>'+
+      '<button data-a="delwp" data-i="'+i+'" style="color:var(--bad)">Delete</button></div>';
+    });
+    html+='</div>';
+  }
+  if(s){
+    html+='<div class="stat"><div><span class="small muted">Tee to pin</span><b>'+fd(s.d)+'</b></div>'+
+    '<div><span class="small muted">Elevation</span><b>'+(s.dz==null?"\u2014":fe(s.dz))+'</b></div>'+
+    '<div><span class="small muted">Heading</span><b>'+Math.round(s.b)+'\u00b0 '+compass(s.b)+'</b></div></div>';
+  }
+  html+='<div class="grid2" style="margin-top:14px"><div><label class="small muted" for="parInput">Par</label>'+
+  '<input type="number" id="parInput" inputmode="numeric" min="1" max="7" step="1" value="'+(h&&h.par!=null?h.par:"")+'" placeholder="3"></div>'+
+  '<div><label class="small muted" for="obInput">Out of bounds</label><textarea id="obInput" rows="1" placeholder="e.g. road right of fairway" style="resize:vertical">'+esc(h&&h.ob?h.ob:"")+'</textarea></div></div>'+
+  '<p class="small muted" style="margin:12px 0 0">Stand at the front of the tee pad, mark waypoints in the order the disc should fly, then mark the pin at the basket. Saving a pin moves to the next hole.</p>';
+  $("holeBox").innerHTML=html;
+}
+function renderCap(){
+  var b=$("capBox");
+  if(!cap){b.style.display="none";b.innerHTML="";$("holeBox").dataset.busy="";renderHole();return;}
+  var pct=Math.min(100,(Date.now()-cap.start)/cap.dur*100);
+  var name=cap.kind==="wp"?"waypoint":cap.kind;
+  b.style.display="block";
+  b.innerHTML='<div class="row between"><b>Averaging H'+cap.hole+' '+name+'\u2026</b><span class="small muted">'+cap.samples.length+' fixes</span></div>'+
+  '<div class="bar"><i style="width:'+pct.toFixed(0)+'%"></i></div>'+
+  '<div class="row between"><span class="small muted">Hold still</span><button data-a="cancel" style="padding:8px 12px">Cancel</button></div>';
+  if(!$("holeBox").dataset.busy){$("holeBox").dataset.busy="1";renderHole();}
+}
+
+/* ---------- render: holes + data ---------- */
+function renderHoles(){
+  var b=$("holesBox");
+  if(!holes.length){b.innerHTML='<p class="muted" style="margin:0">Nothing recorded yet. Go to Capture and mark a tee.</p>';return;}
+  var html="<h2>Recorded holes</h2>";
+  holes.forEach(function(h){
+    var s=stats(h),info;
+    if(s){
+      info='<b>'+fd(s.d)+'</b> \u00b7 '+(s.dz==null?"elev \u2014":fe(s.dz))+' \u00b7 '+compass(s.b);
+      if(h.waypoints.length)info+=' \u00b7 '+h.waypoints.length+' wp ('+fd(pathLen(h))+' along path)';
+    }else{
+      info='<span style="color:var(--warn)">'+(h.tee?"missing pin":h.pin?"missing tee":"empty")+'</span>';
+    }
+    if(h.par!=null)info+=' \u00b7 Par '+h.par;
+    if(h.ob)info+='<div class="small muted">OB: '+esc(h.ob)+'</div>';
+    html+='<div class="item"><div class="n">H'+h.n+'</div><div class="info">'+info+'</div>'+
+    '<button data-a="go" data-n="'+h.n+'">Edit</button><button data-a="del" data-n="'+h.n+'" style="color:var(--bad)">Delete</button></div>';
+  });
+  b.innerHTML=html;
+}
+function renderData(){
+  $("u-ft").className=units==="ft"?"primary":"";
+  $("u-m").className=units==="m"?"primary":"";
+  var ci=$("courseInput");if(document.activeElement!==ci)ci.value=courseName;
+  var bad=holes.filter(function(h){return !h.tee||!h.pin}).length;
+  $("exportNote").textContent=bad?bad+" hole"+(bad>1?"s are":" is")+" missing a tee or pin. Finish "+(bad>1?"them":"it")+" before generating the caddy book.":"All recorded holes are complete.";
+}
+function renderAll(){
+  $("holeBox").dataset.busy="";
+  $("courseLabel").textContent=courseName;
+  renderGPS();renderHole();renderHoles();renderData();
+}
+
+/* ---------- export / import ---------- */
+function slug(s){s=(s||"").trim().toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-+|-+$/g,"");return s||"disc-golf-course"}
+function exportJSON(){
+  if(!holes.length){toast("Nothing to export yet");return;}
+  var out=holes.map(function(h){
+    var o={n:h.n,tee:h.tee,pin:h.pin};
+    if(h.par!=null)o.par=h.par;
+    if(h.ob)o.ob=h.ob;
+    o.waypoints=h.waypoints;
+    return o;
+  });
+  var data=JSON.stringify({holes:out,units:units,courseName:courseName},null,2),name=slug(courseName)+".json";
+  var url=URL.createObjectURL(new Blob([data],{type:"application/json"})),a=document.createElement("a");
+  a.href=url;a.download=name;document.body.appendChild(a);a.click();
+  setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url)},1000);
+  toast("Saved "+name);
+}
+function importJSON(file){
+  var r=new FileReader();
+  r.onload=function(){
+    try{
+      var o=JSON.parse(r.result);
+      if(!o||!Array.isArray(o.holes))throw new Error("bad");
+      holes=o.holes;
+      holes.forEach(function(h){if(!Array.isArray(h.waypoints))h.waypoints=[]});
+      if(o.units)units=o.units;
+      courseName=o.courseName||courseName;
+      cur=holes.length?holes[holes.length-1].n+1:1;
+      persist();renderAll();toast("Course restored");
+    }catch(err){toast("That file isn't a valid course JSON");}
+  };
+  r.readAsText(file);
+}
+
+/* ---------- views + events ---------- */
+function setView(v){
+  ["capture","holes","data"].forEach(function(x){$("v-"+x).classList.toggle("on",x===v)});
+  document.querySelectorAll("nav button").forEach(function(b){b.classList.toggle("on",b.dataset.v===v)});
+  if(v==="holes")renderHoles();
+  if(v==="data")renderData();
+  window.scrollTo(0,0);
+}
+var armed={};
+function arm(btn,label,fn){
+  var key=btn.dataset.a+(btn.dataset.n||btn.dataset.i||"");
+  if(armed[key]){clearTimeout(armed[key].t);btn.textContent=armed[key].old;delete armed[key];fn();return;}
+  var old=btn.textContent;btn.textContent=label;
+  armed[key]={old:old,t:setTimeout(function(){btn.textContent=old;delete armed[key]},3000)};
+}
+document.addEventListener("click",function(e){
+  var b=e.target.closest("[data-a]");
+  if(!b)return;
+  var a=b.dataset.a;
+  if(a==="tab")setView(b.dataset.v);
+  else if(a==="prev"){if(cur>1){cur--;persist();renderHole();}}
+  else if(a==="next"){cur++;persist();renderHole();}
+  else if(a==="mark")beginCapture(b.dataset.k);
+  else if(a==="cancel")cancelCapture();
+  else if(a==="retry")startGPS();
+  else if(a==="go"){cur=+b.dataset.n;persist();setView("capture");renderHole();}
+  else if(a==="delwp"){
+    arm(b,"Tap again",function(){
+      var h=getHole(cur,false);if(!h)return;
+      h.waypoints.splice(+b.dataset.i,1);persist();renderAll();toast("Waypoint deleted");
+    });
+  }
+  else if(a==="del"){
+    arm(b,"Tap again",function(){
+      var n=+b.dataset.n;
+      holes=holes.filter(function(h){return h.n!==n});
+      persist();renderAll();toast("Hole "+n+" deleted");
+    });
+  }
+  else if(a==="unit"){units=b.dataset.u;persist();renderAll();}
+  else if(a==="export")exportJSON();
+  else if(a==="clearall"){
+    arm(b,"Tap again to delete everything",function(){holes=[];cur=1;persist();renderAll();toast("All data deleted");});
+  }
+});
+document.addEventListener("change",function(e){
+  var id=e.target.id;
+  if(id==="dur"){durSec=+e.target.value;persist();}
+  else if(id==="parInput"){
+    var h=getHole(cur,true);
+    if(e.target.value==="")delete h.par;
+    else h.par=Math.max(1,Math.min(7,Math.round(+e.target.value)));
+    persist();renderHoles();
+  }
+  else if(id==="obInput"){
+    var h2=getHole(cur,true),v=e.target.value.trim();
+    if(v)h2.ob=v;else delete h2.ob;
+    persist();renderHoles();
+  }
+  else if(id==="courseInput"){courseName=e.target.value.trim();persist();$("courseLabel").textContent=courseName;}
+  else if(id==="imp"){
+    var f=e.target.files&&e.target.files[0];
+    if(f)importJSON(f);
+    e.target.value="";
+  }
+});
+
+/* ---------- init ---------- */
+load();renderAll();startGPS();keepAwake();
+setInterval(function(){if(last&&!cap)renderGPS()},1000);
+})();
+</script>
+</body>
+</html>

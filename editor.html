@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Caddy Editor</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{--bg:#f3f5f1;--card:#fff;--text:#18211b;--muted:#647268;--accent:#1f7a4d;--accent-text:#fff;--line:#d8dfd9;--soft:#e9efe9;--bad:#c0392b;--warn:#b7791f}
+@media (prefers-color-scheme:dark){:root{--bg:#101410;--card:#1a211b;--text:#e8eee9;--muted:#93a297;--accent:#3fae77;--accent-text:#08140d;--line:#2d372f;--soft:#232c25;--bad:#ef6a5b;--warn:#e0a63c}}
+*,*::before,*::after{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{display:flex;background:var(--bg);color:var(--text);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+#side{width:340px;flex:none;overflow-y:auto;padding:12px;border-right:1px solid var(--line)}
+#map{flex:1;min-width:0;background:#222}
+@media (max-width:760px){body{flex-direction:column-reverse}#side{width:100%;height:46%;border-right:0;border-top:1px solid var(--line)}#map{height:54%;flex:none}}
+h1{font-size:17px;margin:0 0 10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px}
+.small{font-size:13px}.muted{color:var(--muted)}
+.row{display:flex;gap:8px;align-items:center}.between{justify-content:space-between}
+button{font:inherit;color:var(--text);background:var(--soft);border:1px solid var(--line);border-radius:10px;padding:9px 12px;cursor:pointer;touch-action:manipulation}
+button:disabled{opacity:.45}
+button.primary{background:var(--accent);color:var(--accent-text);border-color:transparent;font-weight:700}
+button.wide{width:100%}
+input,select,textarea{font:inherit;color:var(--text);background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:8px;width:100%}
+label{display:block;margin:8px 0 3px}
+.item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--line)}
+.item button{padding:5px 9px;font-size:13px;color:var(--bad)}
+.stat b{font-size:20px;display:block}
+.mk{position:relative}
+.mk i{position:absolute;left:0;top:0;transform:translate(-50%,-50%);display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 1px 5px rgba(0,0,0,.6);font:800 12px/1 system-ui,sans-serif;color:#fff}
+.mk.tee i{width:22px;height:22px;background:#f97316;border-radius:4px}
+.mk.pin i{width:24px;height:24px;background:#ef476f;border-radius:50%}
+.mk.wp i{width:22px;height:22px;background:#d97706;border-radius:50%}
+</style>
+</head>
+<body>
+<div id="side">
+  <h1>Caddy Editor</h1>
+  <div class="card">
+    <label class="small muted" for="file" style="margin-top:0">Course JSON</label>
+    <input type="file" id="file" accept=".json,application/json">
+    <div class="small muted" id="course" style="margin-top:6px"></div>
+  </div>
+  <div id="panel" style="display:none">
+    <div class="card">
+      <div class="row">
+        <button id="prev" aria-label="Previous hole">&lsaquo;</button>
+        <select id="sel"></select>
+        <button id="next" aria-label="Next hole">&rsaquo;</button>
+      </div>
+      <div class="row between" style="margin-top:12px">
+        <div class="stat"><span class="small muted">Tee to pin</span><b id="dTP">&mdash;</b></div>
+        <div class="stat"><span class="small muted">Along path</span><b id="dPath">&mdash;</b></div>
+      </div>
+      <div class="row" style="margin-top:4px">
+        <div style="width:90px"><label class="small muted" for="par">Par</label><input type="number" id="par" min="1" max="7" step="1" inputmode="numeric"></div>
+        <div style="flex:1"><label class="small muted" for="ob">Out of bounds</label><textarea id="ob" rows="2"></textarea></div>
+      </div>
+    </div>
+    <div class="card">
+      <button class="wide" id="add">Add waypoints</button>
+      <p class="small muted" id="addHint" style="margin:8px 0 0">Turn this on, then tap the map. Each waypoint is inserted into the nearest part of the line. Drag any marker to move it.</p>
+      <div id="wps" style="margin-top:6px"></div>
+    </div>
+    <div class="card">
+      <div class="row" style="margin-bottom:8px">
+        <button id="sat" class="primary" style="flex:1">Satellite</button>
+        <button id="osm" style="flex:1">Street map</button>
+      </div>
+      <button class="primary wide" id="save">Download JSON</button>
+      <p class="small muted" id="saveNote" style="margin:8px 0 0"></p>
+    </div>
+  </div>
+</div>
+<div id="map"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function(){
+"use strict";
+var $=function(id){return document.getElementById(id)};
+var data=null,idx=0,adding=false,dirty=false,fileName="";
+
+var map=L.map("map",{maxZoom:21,zoomSnap:0.25}).setView([41.575,-85.86],16);
+var sat=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+  {maxNativeZoom:19,maxZoom:21,attribution:"Imagery &copy; Esri"});
+var osm=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+  {maxNativeZoom:19,maxZoom:21,attribution:"&copy; OpenStreetMap contributors"});
+sat.addTo(map);
+var layer=L.layerGroup().addTo(map),line=null;
+
+function setBase(which){
+  map.removeLayer(which==="sat"?osm:sat);map.addLayer(which==="sat"?sat:osm);
+  $("sat").className=which==="sat"?"primary":"";$("sat").style.flex="1";
+  $("osm").className=which==="osm"?"primary":"";$("osm").style.flex="1";
+}
+
+function icon(cls,txt){
+  return L.divIcon({className:"mk "+cls,iconSize:[0,0],html:"<i>"+(txt||"")+"</i>"});
+}
+function hole(){return data.holes[idx]}
+function pathOf(h){
+  var p=[];
+  if(h.tee)p.push([h.tee.lat,h.tee.lon]);
+  h.waypoints.forEach(function(w){p.push([w.lat,w.lon])});
+  if(h.pin)p.push([h.pin.lat,h.pin.lon]);
+  return p;
+}
+function meters(a,b){return L.latLng(a).distanceTo(L.latLng(b))}
+function fmt(m){return Math.round(data.units==="m"?m:m*3.28084).toLocaleString()+" "+(data.units==="m"?"m":"ft")}
+function markDirty(){dirty=true;$("saveNote").textContent="You have unsaved changes."}
+
+function stats(){
+  var h=hole(),p=pathOf(h),len=0;
+  for(var i=0;i<p.length-1;i++)len+=meters(p[i],p[i+1]);
+  $("dTP").textContent=(h.tee&&h.pin)?fmt(meters([h.tee.lat,h.tee.lon],[h.pin.lat,h.pin.lon])):"\u2014";
+  $("dPath").textContent=(h.tee&&h.pin&&h.waypoints.length)?fmt(len):"\u2014";
+}
+function wpList(){
+  var h=hole(),box=$("wps");box.innerHTML="";
+  h.waypoints.forEach(function(w,i){
+    var d=document.createElement("div");d.className="item";
+    d.innerHTML='<span class="small">Waypoint '+(i+1)+' <span class="muted">'+w.lat.toFixed(5)+', '+w.lon.toFixed(5)+'</span></span><button data-i="'+i+'">Delete</button>';
+    box.appendChild(d);
+  });
+}
+
+function drag(marker,pt,after){
+  marker.on("drag",function(e){
+    var ll=e.target.getLatLng();pt.lat=ll.lat;pt.lon=ll.lng;
+    if(line)line.setLatLngs(pathOf(hole()));
+  });
+  marker.on("dragend",function(){markDirty();stats();wpList();});
+}
+function draw(fit){
+  layer.clearLayers();line=null;
+  var h=hole();
+  $("par").value=h.par!=null?h.par:"";
+  $("ob").value=h.ob||"";
+  var p=pathOf(h);
+  if(p.length>1)line=L.polyline(p,{color:"#fbbf24",weight:3,dashArray:"8 7"}).addTo(layer);
+  function mk(pt,cls,txt){
+    var m=L.marker([pt.lat,pt.lon],{icon:icon(cls,txt),draggable:true}).addTo(layer);
+    drag(m,pt);return m;
+  }
+  if(h.tee)mk(h.tee,"tee","");
+  h.waypoints.forEach(function(w,i){
+    var m=mk(w,"wp",i+1);
+    m.on("dblclick contextmenu",function(ev){L.DomEvent.stopPropagation(ev);removeWp(i)});
+  });
+  if(h.pin)mk(h.pin,"pin","");
+  stats();wpList();
+  if(fit&&p.length)map.fitBounds(L.latLngBounds(p),{padding:[60,60],maxZoom:20});
+}
+
+function removeWp(i){hole().waypoints.splice(i,1);markDirty();draw(false)}
+
+/* insert a new waypoint into the nearest segment of tee -> waypoints -> pin */
+function insertIndex(latlng){
+  var p=pathOf(hole());
+  if(p.length<2)return hole().waypoints.length;
+  var pt=map.latLngToLayerPoint(latlng),best=0,bd=Infinity;
+  for(var i=0;i<p.length-1;i++){
+    var d=L.LineUtil.pointToSegmentDistance(pt,map.latLngToLayerPoint(p[i]),map.latLngToLayerPoint(p[i+1]));
+    if(d<bd){bd=d;best=i}
+  }
+  return best;
+}
+map.on("click",function(e){
+  if(!adding||!data)return;
+  var h=hole();
+  h.waypoints.splice(insertIndex(e.latlng),0,{lat:e.latlng.lat,lon:e.latlng.lng});
+  markDirty();draw(false);
+});
+$("add").addEventListener("click",function(){
+  adding=!adding;
+  this.textContent=adding?"Tap the map to place (tap here to stop)":"Add waypoints";
+  this.className="wide"+(adding?" primary":"");
+  map.getContainer().style.cursor=adding?"crosshair":"";
+});
+$("wps").addEventListener("click",function(e){
+  var b=e.target.closest("button");if(b)removeWp(+b.dataset.i);
+});
+
+/* hole nav */
+function goHole(i,fit){
+  idx=Math.max(0,Math.min(data.holes.length-1,i));
+  $("sel").value=idx;
+  $("prev").disabled=idx===0;$("next").disabled=idx===data.holes.length-1;
+  draw(fit!==false);
+}
+$("sel").addEventListener("change",function(){goHole(+this.value)});
+$("prev").addEventListener("click",function(){goHole(idx-1)});
+$("next").addEventListener("click",function(){goHole(idx+1)});
+
+/* par + ob */
+$("par").addEventListener("change",function(){
+  var h=hole();
+  if(this.value==="")delete h.par;else h.par=Math.max(1,Math.min(7,Math.round(+this.value)));
+  markDirty();
+  document.querySelector("#sel option:checked").textContent=label(h);
+});
+$("ob").addEventListener("change",function(){
+  var h=hole(),v=this.value.trim();
+  if(v)h.ob=v;else delete h.ob;
+  markDirty();
+});
+function label(h){return "Hole "+h.n+(h.par!=null?" (Par "+h.par+")":"")}
+
+/* load + save */
+$("file").addEventListener("change",function(e){
+  var f=e.target.files[0];if(!f)return;
+  var r=new FileReader();
+  r.onload=function(){
+    try{
+      var o=JSON.parse(r.result);
+      if(!o||!Array.isArray(o.holes)||!o.holes.length)throw new Error("bad");
+      o.holes.forEach(function(h){if(!Array.isArray(h.waypoints))h.waypoints=[]});
+      o.holes.sort(function(a,b){return a.n-b.n});
+      data=o;fileName=f.name;dirty=false;idx=0;
+      $("course").textContent=(o.courseName||"Untitled course")+" \u00b7 "+o.holes.length+" holes";
+      $("sel").innerHTML=o.holes.map(function(h,i){return '<option value="'+i+'">'+label(h)+'</option>'}).join("");
+      $("panel").style.display="block";$("saveNote").textContent="";
+      goHole(0);
+    }catch(err){$("course").textContent="That file isn't a valid course JSON."}
+  };
+  r.readAsText(f);
+});
+$("save").addEventListener("click",function(){
+  if(!data)return;
+  var name=(fileName.replace(/\.json$/i,"").replace(/_updated$/i,"")||"course")+"_updated.json";
+  var url=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));
+  var a=document.createElement("a");a.href=url;a.download=name;document.body.appendChild(a);a.click();
+  setTimeout(function(){document.body.removeChild(a);URL.revokeObjectURL(url)},1000);
+  dirty=false;$("saveNote").textContent="Saved "+name;
+});
+$("sat").addEventListener("click",function(){setBase("sat")});
+$("osm").addEventListener("click",function(){setBase("osm")});
+window.addEventListener("beforeunload",function(e){if(dirty){e.preventDefault();e.returnValue=""}});
+})();
+</script>
+</body>
+</html>
