@@ -1,0 +1,14 @@
+# Real passwords and keys live here. Never commit it. Copy config.example.php to config.php to create it.
+config.php
+
+# Built caddy books are generated on the server (keep the empty index.html that blocks folder listings)
+books/*
+!books/index.html
+
+# Worker runtime files
+.worker.lock
+worker.log
+
+# Python
+__pycache__/
+*.pyc
