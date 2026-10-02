@@ -502,6 +502,22 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 .nav button.next { background: var(--cyan); border-color: var(--cyan); color: var(--navy); }
 .nav button.next:disabled { background: var(--panel); color: var(--text); border-color: var(--line); }
 
+/* live position */
+.locate { position: absolute; z-index: 1000; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 120px);
+  height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid var(--cyan);
+  background: rgba(15, 23, 42, .92); font-weight: 700; font-size: 14px; }
+.locate.on { background: var(--cyan); color: var(--navy); }
+.locmsg { position: absolute; z-index: 1000; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 168px);
+  max-width: min(290px, calc(100% - 24px)); margin: 0; padding: 8px 12px; background: rgba(15, 23, 42, .95);
+  border-left: 4px solid var(--amber); border-radius: 8px; font-size: 14px; line-height: 1.35; }
+.locmsg:empty { display: none; }
+.where { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 10px 0 0; text-align: center; }
+.where:empty { display: none; }
+.where .w { background: var(--panel); border-radius: 8px; padding: 7px 6px; font-size: 14px; color: var(--muted); }
+.where b { display: block; font-size: 22px; line-height: 1.15; color: var(--text); }
+.where b.pin { color: var(--pink); }
+.where b.tee { color: var(--orange); }
+
 /* map markers */
 .pt { position: relative; width: 0; height: 0; }
 .pt i { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); display: block;
@@ -517,6 +533,7 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
   align-items: center; justify-content: center; font: 800 14px/1 system-ui, sans-serif; color: #fff;
   text-shadow: 0 1px 2px rgba(0,0,0,.6); }
 .pt.dot i { width: 10px; height: 10px; background: var(--c); border-radius: 2px; border-width: 1.5px; }
+.pt.me i { width: 18px; height: 18px; background: #3b82f6; border: 3px solid #fff; border-radius: 50%; }
 </style>
 </head>
 <body>
@@ -527,8 +544,11 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
   <path d="M20 5 L26 22 L20 18.5 L14 22 Z" fill="#38bdf8" stroke="#fff" stroke-width="1"/>
   <text x="20" y="34" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="800" fill="#fff">N</text></svg>
 </div>
+<button class="locate" id="locate" type="button" aria-pressed="false">Show my location</button>
+<p class="locmsg" id="locmsg" role="status" aria-live="polite"></p>
 <div class="card" id="card">
   <div class="stats" id="stats"></div>
+  <div class="where" id="where"></div>
   <p class="ob" id="ob"></p>
   <p class="hint" id="hint"></p>
   <div class="nav">
@@ -552,9 +572,11 @@ L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 map.attributionControl.setPrefix(false);
 const layer = L.layerGroup().addTo(map);
+const meLayer = L.layerGroup().addTo(map);   // your position; survives hole changes
 
 const $ = id => document.getElementById(id);
 let cur = 0;   // 0 = course overview, 1..N = hole number
+let view = { pts: null, bearing: null };   // what the map is currently framed on
 
 function icon(cls, label, extra) {
   return L.divIcon({ className: 'pt ' + cls, iconSize: [0, 0],
@@ -623,6 +645,8 @@ function render() {
   });
   const pts = cur === 0 ? drawOverview() : drawHole(D.holes[cur - 1]);
   const bearing = cur === 0 ? null : D.holes[cur - 1].bearing;
+  view = { pts, bearing };
+  updateWhere();
   $('compass').firstElementChild.style.transform = 'rotate(' + (bearing === null || !CAN_ROTATE ? 0 : -bearing) + 'deg)';
   $('prev').disabled = cur === 0;
   $('next').disabled = cur === D.holes.length;
@@ -668,6 +692,82 @@ function fit(pts, bearing) {
   map.setView(map.unproject(L.point(o.x + dx, o.y + dy), 0), z, { animate: false });
 }
 
+// ---- live position: only runs while the "Show my location" button is on ----
+let watchId = null, me = null, meMarker = null, meCircle = null, msgTimer = null;
+const FT = 3.28084;
+
+function fmtDist(m) {
+  if (D.units === 'm') return m >= 1000 ? (m / 1000).toFixed(1) + ' km' : Math.round(m) + ' m';
+  const ft = m * FT;
+  return ft >= 5280 ? (ft / 5280).toFixed(1) + ' mi' : Math.round(ft).toLocaleString() + ' ft';
+}
+function locMsg(text) {
+  const el = $('locmsg');
+  el.textContent = text || '';
+  clearTimeout(msgTimer);
+  if (text) msgTimer = setTimeout(() => { el.textContent = ''; }, 7000);
+}
+function setLocate(label, on) {
+  const b = $('locate');
+  b.textContent = label;
+  b.setAttribute('aria-pressed', on ? 'true' : 'false');
+  b.classList.toggle('on', !!on);
+}
+// Fills the "To pin / To tee" row. Returns true when the row appeared or disappeared (the card changed height).
+function updateWhere() {
+  const el = $('where'), before = el.innerHTML;
+  if (me && cur > 0) {
+    const p = D.holes[cur - 1].path, here = L.latLng(me.lat, me.lng);
+    const pin = L.latLng(p[p.length - 1][0], p[p.length - 1][1]), tee = L.latLng(p[0][0], p[0][1]);
+    el.innerHTML = '<span class="w">To pin<b class="pin">' + fmtDist(here.distanceTo(pin)) + '</b></span>' +
+                   '<span class="w">To tee<b class="tee">' + fmtDist(here.distanceTo(tee)) + '</b></span>';
+  } else {
+    el.innerHTML = '';
+  }
+  return (before === '') !== (el.innerHTML === '');
+}
+function refit() {
+  document.documentElement.style.setProperty('--card-h', $('card').offsetHeight + 'px');
+  if (view.pts) fit(view.pts, view.bearing);
+}
+function onPos(p) {
+  const c = p.coords;
+  me = { lat: c.latitude, lng: c.longitude, acc: c.accuracy };
+  const ll = [me.lat, me.lng];
+  if (!meMarker) {
+    meCircle = L.circle(ll, { radius: me.acc, color: '#3b82f6', weight: 1, fillColor: '#3b82f6', fillOpacity: .12, interactive: false }).addTo(meLayer);
+    meMarker = L.marker(ll, { icon: icon('me', ''), interactive: false, keyboard: false, zIndexOffset: 1000 }).addTo(meLayer);
+  } else {
+    meMarker.setLatLng(ll); meCircle.setLatLng(ll); meCircle.setRadius(me.acc);
+  }
+  setLocate('My location ±' + fmtDist(me.acc), true);
+  locMsg('');
+  if (updateWhere()) refit();
+}
+function onErr(e) {
+  if (e.code === 1) {   // permission denied: nothing more to try
+    stopLocate();
+    locMsg('Location is blocked. Allow it for this site in your browser settings, then try again.');
+    return;
+  }
+  // Unavailable or timed out is usually brief (trees, buildings, a weak fix). Keep watching; the next fix clears the message.
+  locMsg(e.code === 2 ? 'Your position is unavailable right now. Check that location is turned on.'
+                      : 'Finding your position is taking a while. Try moving into the open.');
+}
+function startLocate() {
+  if (!('geolocation' in navigator)) { locMsg('This browser does not support location.'); return; }
+  if (!window.isSecureContext) { locMsg('Location only works on a secure (https) page.'); return; }
+  setLocate('Finding you…', true);
+  watchId = navigator.geolocation.watchPosition(onPos, onErr, { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
+}
+function stopLocate() {
+  if (watchId !== null) navigator.geolocation.clearWatch(watchId);
+  watchId = null; me = null; meMarker = null; meCircle = null;
+  meLayer.clearLayers();
+  setLocate('Show my location', false);
+  if (updateWhere()) refit();
+}
+
 function go(n) { cur = Math.max(0, Math.min(D.holes.length, n)); render(); }
 
 (function init() {
@@ -680,6 +780,7 @@ function go(n) { cur = Math.max(0, Math.min(D.holes.length, n)); render(); }
     b.addEventListener('click', () => go(i));
     chips.appendChild(b);
   });
+  $('locate').addEventListener('click', () => (watchId === null ? startLocate() : stopLocate()));
   $('prev').addEventListener('click', () => go(cur - 1));
   $('next').addEventListener('click', () => go(cur + 1));
   document.addEventListener('keydown', e => {
