@@ -4,8 +4,18 @@
 if (PHP_SAPI !== 'cli') { http_response_code(403); exit; }
 require __DIR__ . '/config.php';
 
-$lock = fopen(__DIR__ . '/.worker.lock', 'c');
-if (!$lock || !flock($lock, LOCK_EX | LOCK_NB)) exit;   // a build is already running
+// Run with -v to see a message when there is nothing to do (cron runs stay quiet).
+$verbose = in_array('-v', $argv ?? [], true);
+
+$lock = @fopen(__DIR__ . '/.worker.lock', 'c');
+if (!$lock) {
+    fwrite(STDERR, "worker: cannot create " . __DIR__ . "/.worker.lock. Run it as a user that can write to this folder.\n");
+    exit(1);
+}
+if (!flock($lock, LOCK_EX | LOCK_NB)) {   // a build is already running
+    if ($verbose) echo "worker: another build is already running.\n";
+    exit;
+}
 
 $db = new PDO(DB_DSN, DB_USER, DB_PASS, [
     PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
@@ -15,9 +25,11 @@ $db = new PDO(DB_DSN, DB_USER, DB_PASS, [
 // A previous run that died mid-build leaves 'building' behind. We hold the lock, so nothing is really building.
 $db->exec("UPDATE courses SET status='queued' WHERE status='building'");
 
+$built = 0;
 while (true) {
     $row = $db->query("SELECT id,public_id,data,rev FROM courses WHERE status='queued' ORDER BY queued_at LIMIT 1")->fetch();
     if (!$row) break;
+    $built++;
 
     $db->prepare("UPDATE courses SET status='building' WHERE id=?")->execute([$row['id']]);
     $dir = BOOKS_DIR . '/' . $row['public_id'];
@@ -55,3 +67,4 @@ while (true) {
     @rmdir($tmp);
     echo date('c'), ' ', $row['public_id'], ' exit=', $code, "\n";
 }
+if ($built === 0 && $verbose) echo "worker: nothing queued. Mark a course complete in the editor first.\n";
