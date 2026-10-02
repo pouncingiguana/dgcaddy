@@ -14,7 +14,11 @@ try {
         PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
         PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     ]);
-} catch (Exception $e) { out(500, ['error' => 'Database connection failed.']); }
+} catch (Exception $e) {
+    // The browser only sees a generic message; the real reason goes to the PHP/Apache error log.
+    error_log('caddy api: database connection failed: ' . $e->getMessage());
+    out(500, ['error' => 'Database connection failed. The reason is in the server error log.']);
+}
 
 $a    = $_GET['a'] ?? '';
 $body = json_decode(file_get_contents('php://input'), true) ?: [];
