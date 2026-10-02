@@ -8,9 +8,10 @@ require __DIR__ . '/notify.php';
 // Run with -v to see a message when there is nothing to do (cron runs stay quiet).
 $verbose = in_array('-v', $argv ?? [], true);
 
-$lock = @fopen(__DIR__ . '/.worker.lock', 'c');
+// The lock lives in the books folder, the one place this user already needs write access to.
+$lock = @fopen(BOOKS_DIR . '/.worker.lock', 'c');
 if (!$lock) {
-    fwrite(STDERR, "worker: cannot create " . __DIR__ . "/.worker.lock. Run it as a user that can write to this folder.\n");
+    fwrite(STDERR, "worker: cannot create " . BOOKS_DIR . "/.worker.lock. The books folder must exist and be writable by the user running the worker.\n");
     exit(1);
 }
 if (!flock($lock, LOCK_EX | LOCK_NB)) {   // a build is already running
